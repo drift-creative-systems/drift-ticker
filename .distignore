@@ -1,0 +1,14 @@
+# Files left out of the release zip.
+/.git
+/.github
+/.vscode
+/build
+/tests
+.gitignore
+.gitattributes
+.distignore
+phpcs.xml.dist
+README.md
+CHANGELOG.md
+CLAUDE.md
+MEMORY.md
