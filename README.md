@@ -18,13 +18,14 @@ Internal plugin by **Drift Creative Systems**. Takes a daily snapshot of each Dr
 | 3 | Admin table, charts and CSV export | Done |
 | 4 | Front-end function, shortcode, hero/card strip | Done (theme placement is manual, see below) |
 | 5 | Go-live detection and history backfill | Done (theme `wporg` status is manual, see below) |
-| 6 | Alerts and weekly summary | |
+| 6 | Alerts and weekly summary | Done |
 | 7 | Stats in page modules | |
 
 ## How it works
 
 - **Tracked plugins** = every `drift_app` (published, draft, pending, future or private) with a `drift_wporg_slug`, in menu order, plus the extra slugs on Settings → Drift: Ticker. `drift_ticker_tracked()` returns `slug => app ID` (0 for extra slugs).
-- **Daily snapshot** (`drift_ticker_daily_snapshot`, WP-Cron, daily from 03:15 Europe/London) calls `drift_ticker_run_snapshot()`. For each slug it fetches `https://api.wordpress.org/plugins/info/1.2/?action=plugin_information`, asking for `downloaded`, `active_installs`, `ratings`, `support_threads` and `support_threads_resolved` and turning off `sections`, `screenshots` and the other heavy fields. Responses are cached in a transient for 6 hours (`drift_ticker_wporg_{md5(slug)}`); errors aren't cached.
+- **Cron:** `drift_ticker_daily_snapshot` (daily from 03:15 Europe/London) and `drift_ticker_weekly_summary` (Mondays 08:30 Europe/London). Both cleared on deactivation.
+- **Daily snapshot** (`drift_ticker_daily_snapshot`) calls `drift_ticker_run_snapshot()`. For each slug it fetches `https://api.wordpress.org/plugins/info/1.2/?action=plugin_information`, asking for `downloaded`, `active_installs`, `ratings`, `support_threads` and `support_threads_resolved` and turning off `sections`, `screenshots` and the other heavy fields. Responses are cached in a transient for 6 hours (`drift_ticker_wporg_{md5(slug)}`); errors aren't cached.
 - **One row per slug per day** in `{prefix}drift_ticker_snapshots`, unique on (`slug`, `snap_date`). A second run on the same London day updates the row.
 - **Not found** (HTTP 404, `"Plugin not found."`) marks the slug `pending`, with no row. The first good response marks it `live` and fires `drift_ticker_went_live`. A live slug that later comes back "not found" stays live and the error is logged (it's more likely an API blip than a removal). `"error":"closed"` marks it `closed`.
 - **Failures** (timeout, bad JSON, 5xx, DB write error) leave the last good row in place, set `last_error` on the slug and add a line to the fetch log on the settings screen.
@@ -157,6 +158,38 @@ function drift_app_is_available( string $status ): bool {
 
 `assets/site.css`, lines 155, 156 and 230: add `.pill--wporg` next to `.pill--live` in all three selectors. Also add `"wporg": "Free on WordPress.org"` to the `drift_status` choices in `acf-json/group_drift_app_details.json` (fallback copy; bump `modified`). Then bump the theme version.
 
+## Alerts
+
+`includes/alerts.php`. Settings → Drift: Ticker → Alerts: Make webhook URL, Slack webhook URL (optional), email address (optional). Webhooks must be https. "Send a test alert" sends to the saved channels; "Recent alerts" lists the last 20 with status and where they went.
+
+| Event | When | Key (sent once per key) |
+|---|---|---|
+| `live` | A pending slug is approved (step 5) | `live:{slug}` |
+| `review` | Ratings count per star went up; one event per star level. `low_rating` true under 4 stars (prefixed "Under 4 stars:" in Slack and email). WordPress.org gives counts, not review text, so it links to the reviews page | `review:{slug}:{num_ratings}:{star}` |
+| `support_thread` | `support_threads` went up. WordPress.org counts the last two months, so an old thread dropping off the same day can hide a new one | `support_thread:{slug}:{date}:{threads}` |
+| `milestone` | Downloads passed 100, 500, 1k, 5k, 10k, 50k, 100k, 500k, 1M… (filter `drift_ticker_milestones`); only the highest one crossed since the last snapshot | `milestone:{slug}:{n}` |
+| `installs` | Active installs band changed, up or down | `installs:{slug}:{date}:{band}` |
+| `version` | New version on WordPress.org | `version:{slug}:{version}` |
+| `weekly` | Mondays 08:30 Europe/London: downloads this week (last 7 days) vs the 7 before, all-time totals, open threads, per plugin and overall | `weekly:{ISO week}` |
+| `test` | "Send a test alert" | unique each time |
+
+- A slug's first snapshot raises nothing (there's nothing to compare with).
+- **Payload** (Make gets it as JSON; Slack and email get a text version):
+  ```json
+  {
+    "event": "milestone",
+    "slug": "drift-wipe",
+    "plugin_name": "Drift: Wipe",
+    "values": { "milestone": 1000, "downloaded": 1012, "app_id": 458 },
+    "url": "https://wordpress.org/plugins/drift-wipe/",
+    "timestamp": "2026-11-20T03:15:00+00:00"
+  }
+  ```
+  `timestamp` is ISO 8601 in Europe/London. For `weekly`, `slug` is empty, `url` is the settings screen, and `values` has `this_week`, `last_week`, `downloaded` and `plugins` (one entry per plugin with the same keys plus `name`, `slug` and `open_threads`).
+- **Once only:** every event is written to `{prefix}drift_ticker_events` before sending; a key that's already there is never sent again. Events raised with no channels set are recorded as `no_channels`, so adding a channel later doesn't send a backlog.
+- **Retries:** a channel that fails (non-2xx, timeout, `wp_mail()` false) is retried at the end of the next snapshot runs, only for that channel, three attempts in all, within two days. Failures are also in the fetch log.
+- The weekly summary is a single cron event re-booked after each run, so it stays at 08:30 London time through the clock changes.
+
 ## Database
 
 `{prefix}drift_ticker_snapshots`
@@ -179,6 +212,8 @@ function drift_app_is_available( string $status ): bool {
 
 `{prefix}drift_ticker_backfill` (`slug`, `stat_date`, `downloads`): daily counts from the unofficial stats endpoint, loaded once at go-live (step 5). Kept separate because they're per-day counts, not totals.
 
+`{prefix}drift_ticker_events` (`event_key` unique, `event`, `slug`, `payload` JSON, `status` pending / sent / partial / failed / no_channels, `channels` delivered, `attempts`, `last_error`, `created_at`, `sent_at`): every alert, for dedupe and retries. Added in schema version 2.
+
 ## Options
 
 | Option | Contents |
@@ -188,6 +223,9 @@ function drift_app_is_available( string $status ): bool {
 | `drift_ticker_log` | Last 50 fetch errors |
 | `drift_ticker_last_run` | Timestamp of the last run |
 | `drift_ticker_lock` | Run lock |
+| `drift_ticker_make_webhook` | Make webhook URL |
+| `drift_ticker_slack_webhook` | Slack webhook URL |
+| `drift_ticker_alert_email` | Alert email address |
 | `drift_ticker_db_version` | Schema version |
 
 All deleted, with both tables and the cached responses, in `uninstall.php` (on every site in a multisite network). The `drift_wporg_slug` post meta is left on the apps.
@@ -202,7 +240,8 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `drift_ticker_went_live` | action | `( $slug, $data, $app_id, $previous_status )`. First good response. `$previous_status` is `pending` when it's just been approved, `unknown` the first time an already-live slug is checked |
 | `drift_ticker_snapshot_saved` | action | `( $slug, $data, $previous_row, $app_id )` after each saved row |
 | `drift_ticker_snapshot_complete` | action | `( $results )`: `slug => saved / pending / error message` |
-| `drift_ticker_event` | action | `( $event, $slug, $values )`. Alert-worthy events; step 6 sends them. `live` in step 5 |
+| `drift_ticker_event` | action | `( $event, $slug, $values, $key )`. Raise an alert; it's recorded and sent once per key (default `{event}:{slug}`) |
+| `drift_ticker_milestones` | filter | Download milestones. Default 100, 500, 1k, 5k, 10k, 50k, 100k, 500k, 1M, 5M, 10M |
 | `drift_ticker_live_status` | filter | `drift_status` value written at go-live. Default `wporg` when the theme has it, else `live` |
 | `drift_ticker_suite_aliases` | filter | `alias => suite key` for `suite="…"`. Default `wp => agency` |
 | `drift_ticker_strip_html` | filter | `( $html, $slug, $args )` |
@@ -220,6 +259,7 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `includes/sources/` | `Drift_Ticker_Source` interface and the WordPress.org source |
 | `includes/snapshots.php` | Run, save and read snapshots |
 | `includes/stats.php` | Daily series, 7/30-day totals, labels (database only; used by the front end later) |
+| `includes/alerts.php` | Event detection, dedupe, Make / Slack / email delivery, retries, weekly summary |
 | `includes/golive.php` | App status at go-live, `live` event, history backfill |
 | `includes/frontend.php` | `drift_ticker_get()`, suite totals, strip, button, shortcodes, page cache purge |
 | `assets/ticker.css` | Front-end strip styles |

@@ -20,6 +20,7 @@ function drift_ticker_delete_data() {
 	// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Dropping this plugin's own tables; names from $wpdb->prefix.
 	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}drift_ticker_snapshots" );
 	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}drift_ticker_backfill" );
+	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}drift_ticker_events" );
 
 	// Cached API responses: drift_ticker_wporg_{md5}.
 	$wpdb->query(
@@ -31,11 +32,23 @@ function drift_ticker_delete_data() {
 	);
 	// phpcs:enable
 
-	foreach ( array( 'drift_ticker_db_version', 'drift_ticker_extra_slugs', 'drift_ticker_state', 'drift_ticker_log', 'drift_ticker_last_run', 'drift_ticker_lock' ) as $option ) {
+	$options = array(
+		'drift_ticker_db_version',
+		'drift_ticker_extra_slugs',
+		'drift_ticker_state',
+		'drift_ticker_log',
+		'drift_ticker_last_run',
+		'drift_ticker_lock',
+		'drift_ticker_make_webhook',
+		'drift_ticker_slack_webhook',
+		'drift_ticker_alert_email',
+	);
+	foreach ( $options as $option ) {
 		delete_option( $option );
 	}
 
 	wp_clear_scheduled_hook( 'drift_ticker_daily_snapshot' );
+	wp_clear_scheduled_hook( 'drift_ticker_weekly_summary' );
 }
 
 if ( is_multisite() ) {

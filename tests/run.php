@@ -555,6 +555,188 @@ dt_test( 'Backfill database failure', function () {
 	dt_assert( is_wp_error( $result ) && '' === drift_ticker_get_state( 'drift-wipe' )['backfilled'], 'DB error → WP_Error, not marked backfilled' );
 } );
 
+/** A stored-row shape for drift_ticker_events_from_change(). */
+function dt_prev_row( $overrides = array() ) {
+	return array_merge(
+		array(
+			'downloaded'               => 90,
+			'active_installs'          => 10,
+			'rating'                   => 100,
+			'num_ratings'              => 2,
+			'ratings_json'             => '{"5":2,"4":0,"3":0,"2":0,"1":0}',
+			'support_threads'          => 1,
+			'support_threads_resolved' => 1,
+			'version'                  => '1.0.0',
+		),
+		$overrides
+	);
+}
+
+function dt_new_data( $overrides = array() ) {
+	return array_merge(
+		array(
+			'downloaded'               => 90,
+			'active_installs'          => 10,
+			'rating'                   => 100,
+			'num_ratings'              => 2,
+			'ratings'                  => array( 5 => 2, 4 => 0, 3 => 0, 2 => 0, 1 => 0 ),
+			'support_threads'          => 1,
+			'support_threads_resolved' => 1,
+			'version'                  => '1.0.0',
+		),
+		$overrides
+	);
+}
+
+function dt_channels() {
+	update_option( 'drift_ticker_make_webhook', 'https://hook.eu1.make.com/abc' );
+	update_option( 'drift_ticker_slack_webhook', 'https://hooks.slack.com/services/T/B/x' );
+	update_option( 'drift_ticker_alert_email', 'alerts@example.test' );
+}
+
+function dt_events_rows() {
+	return $GLOBALS['wpdb']->get_results( 'SELECT * FROM wp_drift_ticker_events ORDER BY id' );
+}
+
+dt_test( 'Events from a change between snapshots', function () {
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 03:15:00 UTC' );
+	dt_assert( array() === drift_ticker_events_from_change( 'drift-wipe', dt_new_data(), dt_prev_row() ), 'nothing changed → no events' );
+
+	$events = drift_ticker_events_from_change(
+		'drift-wipe',
+		dt_new_data(
+			array(
+				'downloaded'      => 1100,
+				'active_installs' => 100,
+				'num_ratings'     => 4,
+				'rating'          => 84,
+				'ratings'         => array( 5 => 3, 4 => 0, 3 => 0, 2 => 1, 1 => 0 ),
+				'support_threads' => 3,
+				'version'         => '1.1.0',
+			)
+		),
+		dt_prev_row()
+	);
+	$by = array();
+	foreach ( $events as $e ) {
+		$by[ $e['event'] ][] = $e;
+	}
+	dt_assert( 2 === count( $by['review'] ) && 5 === $by['review'][0]['values']['stars'] && 2 === $by['review'][1]['values']['stars'], 'one review event per star that went up (5★ and 2★)' );
+	dt_assert( false === $by['review'][0]['values']['low_rating'] && true === $by['review'][1]['values']['low_rating'], 'under 4 stars flagged' );
+	dt_assert( 2 === $by['support_thread'][0]['values']['count'] && 2 === $by['support_thread'][0]['values']['open_threads'], 'two new threads, two open' );
+	dt_assert( 1 === count( $by['milestone'] ) && 1000 === $by['milestone'][0]['values']['milestone'] && 'milestone:drift-wipe:1000' === $by['milestone'][0]['key'], '90 → 1,100 crosses 100, 500 and 1k: only 1k sent' );
+	dt_assert( '10+' === $by['installs'][0]['values']['from_band'] && '100+' === $by['installs'][0]['values']['to_band'] && 'up' === $by['installs'][0]['values']['direction'], 'installs band 10+ → 100+' );
+	dt_assert( 'version:drift-wipe:1.1.0' === $by['version'][0]['key'] && '1.0.0' === $by['version'][0]['values']['previous'], 'new version 1.1.0' );
+
+	$down = drift_ticker_events_from_change( 'drift-wipe', dt_new_data( array( 'support_threads' => 0, 'active_installs' => 0 ) ), dt_prev_row() );
+	dt_assert( 1 === count( $down ) && 'installs' === $down[0]['event'] && 'down' === $down[0]['values']['direction'], 'threads dropping off isn\'t an event; installs going down is' );
+} );
+
+dt_test( 'Sending: payload, channels, once only', function () {
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 03:15:00 UTC' );
+	dt_channels();
+	$GLOBALS['dt_posts'] = array( 458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe' ) ) );
+	dt_mock( array( 'downloaded' => 90 ), array() );
+	drift_ticker_run_snapshot( true );
+	dt_assert( array() === $GLOBALS['dt_sent'], 'first snapshot of an already-live slug: nothing sent' );
+
+	$GLOBALS['dt_now'] = strtotime( '2026-11-20 03:15:00 UTC' );
+	dt_mock( array( 'downloaded' => 120, 'version' => '1.2.0' ), array() );
+	drift_ticker_run_snapshot( true );
+
+	$make = array_values( array_filter( $GLOBALS['dt_sent'], function ( $s ) { return false !== strpos( $s['url'], 'make.com' ); } ) );
+	dt_assert( 2 === count( $make ), 'Make got two events (milestone 100, version 1.2.0)' );
+	$payload = $make[0]['body'];
+	dt_assert( array( 'event', 'slug', 'plugin_name', 'values', 'url', 'timestamp' ) === array_keys( $payload ), 'payload keys: event, slug, plugin_name, values, url, timestamp' );
+	dt_assert( 'milestone' === $payload['event'] && 'Drift: Wipe' === $payload['plugin_name'] && 'https://wordpress.org/plugins/drift-wipe/' === $payload['url'], 'payload values' );
+	dt_assert( '2026-11-20T03:15:00+00:00' === $payload['timestamp'], 'timestamp ISO 8601 in London time' );
+
+	$slack = array_values( array_filter( $GLOBALS['dt_sent'], function ( $s ) { return false !== strpos( $s['url'], 'slack.com' ); } ) );
+	dt_assert( 2 === count( $slack ) && 0 === strpos( $slack[0]['body']['text'], '*Drift: Wipe passed 100 downloads*' ), 'Slack text' );
+	dt_assert( 2 === count( $GLOBALS['dt_mail'] ) && '[Drift: Ticker] Drift: Wipe 1.2.0 is on WordPress.org' === $GLOBALS['dt_mail'][1]['subject'], 'email subject' );
+
+	$rows = dt_events_rows();
+	dt_assert( 2 === count( $rows ) && 'sent' === $rows[0]['status'] && 'make,slack,email' === $rows[0]['channels'], 'recorded as sent to all three' );
+
+	$GLOBALS['dt_sent'] = array();
+	drift_ticker_run_snapshot( true ); // Same day, same numbers.
+	$GLOBALS['dt_now'] = strtotime( '2026-11-21 03:15:00 UTC' );
+	dt_mock( array( 'downloaded' => 130, 'version' => '1.2.0' ), array() );
+	drift_ticker_run_snapshot( true );
+	dt_assert( array() === $GLOBALS['dt_sent'], 'later runs send nothing new' );
+
+	dt_assert( 'duplicate' === drift_ticker_send_event( 'milestone', 'drift-wipe', array(), 'milestone:drift-wipe:100' ), 'the same key is never sent twice' );
+} );
+
+dt_test( 'No channels: recorded, not sent later', function () {
+	dt_assert( 'no_channels' === drift_ticker_send_event( 'live', 'drift-wipe', array() ), 'recorded as no_channels' );
+	dt_channels();
+	dt_assert( 'duplicate' === drift_ticker_send_event( 'live', 'drift-wipe', array() ), 'adding channels later doesn\'t send old events' );
+	dt_assert( array() === $GLOBALS['dt_sent'], 'nothing sent' );
+} );
+
+dt_test( 'Failed delivery is retried only where it failed', function () {
+	dt_channels();
+	$GLOBALS['dt_post'] = function ( $url ) {
+		return false !== strpos( $url, 'make.com' ) ? array( 'response' => array( 'code' => 500 ), 'body' => '' ) : array( 'response' => array( 'code' => 200 ), 'body' => 'ok' );
+	};
+	dt_assert( 'partial' === drift_ticker_send_event( 'live', 'drift-wipe', array() ), 'Make down, Slack and email fine → partial' );
+	dt_assert( false !== strpos( dt_events_rows()[0]['last_error'], 'make: HTTP 500' ), 'error recorded' );
+
+	$GLOBALS['dt_post'] = null;
+	$GLOBALS['dt_sent'] = array();
+	$GLOBALS['dt_mail'] = array();
+	drift_ticker_retry_failed_events();
+	dt_assert( 1 === count( $GLOBALS['dt_sent'] ) && false !== strpos( $GLOBALS['dt_sent'][0]['url'], 'make.com' ) && array() === $GLOBALS['dt_mail'], 'retry goes to Make only' );
+	dt_assert( 'sent' === dt_events_rows()[0]['status'] && 'slack,email,make' === dt_events_rows()[0]['channels'], 'now sent everywhere' );
+
+	$GLOBALS['dt_post'] = function () { return new WP_Error( 'http_request_failed', 'timed out' ); };
+	$GLOBALS['dt_mail_ok'] = false;
+	drift_ticker_send_event( 'version', 'drift-wipe', array( 'version' => '2.0.0' ), 'version:drift-wipe:2.0.0' );
+	drift_ticker_retry_failed_events();
+	drift_ticker_retry_failed_events();
+	drift_ticker_retry_failed_events();
+	$row = dt_events_rows()[1];
+	dt_assert( 'failed' === $row['status'] && 3 === (int) $row['attempts'], 'gives up after three attempts' );
+} );
+
+dt_test( 'Weekly summary', function () {
+	dt_assert( 'nothing_live' === drift_ticker_send_weekly_summary(), 'nothing live → nothing sent' );
+
+	dt_channels();
+	$GLOBALS['dt_posts'] = array( 458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe' ) ) );
+	dt_seed( 'drift-wipe', array( '2026-11-04' => array( 1000, '1.0.0' ) ) );
+	$total = 1000;
+	for ( $d = 5; $d <= 17; $d++ ) {
+		$total += $d <= 10 ? 10 : 20; // 10 a day the week before, 20 a day this week.
+		dt_seed( 'drift-wipe', array( sprintf( '2026-11-%02d', $d ) => array( $total, '1.0.0' ) ) );
+	}
+	drift_ticker_update_state( 'drift-wipe', array( 'status' => 'live' ) );
+
+	$GLOBALS['dt_now'] = strtotime( '2026-11-17 08:30:00 UTC' ); // Monday.
+	$values            = drift_ticker_weekly_values();
+	dt_assert( 140 === $values['this_week'] && 60 === $values['last_week'], 'this week 140 (11–17/11), last week 60 (4–10/11: the 4th is the first snapshot, so no difference)' );
+	dt_assert( 1 === count( $values['plugins'] ) && 2 === $values['plugins'][0]['open_threads'] && $total === $values['downloaded'], 'per-plugin open threads and total' );
+
+	dt_assert( 'sent' === drift_ticker_send_weekly_summary(), 'sent' );
+	dt_assert( 'duplicate' === drift_ticker_send_weekly_summary(), 'once per ISO week' );
+	dt_assert( false !== strpos( $GLOBALS['dt_mail'][0]['message'], 'Drift: Wipe: 140 this week (60 last week)' ), 'per-plugin line in the email' );
+	dt_assert( 'weekly:2026-W47' === dt_events_rows()[0]['event_key'], 'keyed by ISO week' );
+} );
+
+dt_test( 'Weekly schedule and settings', function () {
+	$GLOBALS['dt_now'] = null;
+	$next              = new DateTime( '@' . drift_ticker_next_weekly_time() );
+	$next->setTimezone( new DateTimeZone( 'Europe/London' ) );
+	dt_assert( 'Mon 08:30' === $next->format( 'D H:i' ) && $next->getTimestamp() > time(), 'next run is a Monday at 08:30 London time, in the future' );
+
+	dt_assert( '' === drift_ticker_sanitize_webhook( 'http://hook.make.com/x' ) && 'https://hook.make.com/x' === drift_ticker_sanitize_webhook( ' https://hook.make.com/x ' ), 'webhooks must be https' );
+	dt_assert( '' === drift_ticker_sanitize_alert_email( 'not an email' ), 'invalid email dropped' );
+
+	$text = drift_ticker_slack_text( array( 'title' => 'A <b> & c', 'lines' => array( 'x>y' ) ) );
+	dt_assert( "*A &lt;b&gt; &amp; c*\nx&gt;y" === $text, 'Slack control characters escaped' );
+} );
+
 // ---------------------------------------------------------------------------
 
 if ( in_array( '--live', $argv, true ) ) {

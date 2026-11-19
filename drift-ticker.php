@@ -37,7 +37,7 @@ if ( defined( 'DRIFT_TICKER_VERSION' ) ) {
 }
 
 define( 'DRIFT_TICKER_VERSION', '0.1.0' );
-define( 'DRIFT_TICKER_DB_VERSION', '1' );
+define( 'DRIFT_TICKER_DB_VERSION', '2' );
 define( 'DRIFT_TICKER_FILE', __FILE__ );
 define( 'DRIFT_TICKER_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DRIFT_TICKER_URL', plugin_dir_url( __FILE__ ) );
@@ -46,6 +46,7 @@ define( 'DRIFT_TICKER_OPTION_GROUP', 'drift_ticker_settings' );
 define( 'DRIFT_TICKER_TIMEZONE', 'Europe/London' );
 define( 'DRIFT_TICKER_SLUG_META', 'drift_wporg_slug' );
 define( 'DRIFT_TICKER_CRON_DAILY', 'drift_ticker_daily_snapshot' );
+define( 'DRIFT_TICKER_CRON_WEEKLY', 'drift_ticker_weekly_summary' );
 
 require DRIFT_TICKER_DIR . 'includes/plugin.php';
 

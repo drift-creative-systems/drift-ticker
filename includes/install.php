@@ -31,6 +31,17 @@ function drift_ticker_backfill_table() {
 }
 
 /**
+ * Events table name: every alert raised, keyed so nothing is sent twice,
+ * with what was delivered where.
+ *
+ * @return string
+ */
+function drift_ticker_events_table() {
+	global $wpdb;
+	return $wpdb->prefix . 'drift_ticker_events';
+}
+
+/**
  * Creates or updates the tables with dbDelta and records the schema version.
  * dbDelta is picky: two spaces after PRIMARY KEY, one field per line.
  *
@@ -43,6 +54,7 @@ function drift_ticker_install_tables() {
 	$charset_collate = $wpdb->get_charset_collate();
 	$snapshots       = drift_ticker_table();
 	$backfill        = drift_ticker_backfill_table();
+	$events          = drift_ticker_events_table();
 
 	dbDelta(
 		"CREATE TABLE {$snapshots} (
@@ -77,6 +89,26 @@ function drift_ticker_install_tables() {
 		) {$charset_collate};"
 	);
 
+	// event_key is at most 191 characters so the unique index fits utf8mb4.
+	dbDelta(
+		"CREATE TABLE {$events} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			event_key varchar(191) NOT NULL,
+			event varchar(40) NOT NULL,
+			slug varchar(200) NOT NULL DEFAULT '',
+			payload longtext NOT NULL,
+			status varchar(20) NOT NULL DEFAULT 'pending',
+			channels varchar(100) NOT NULL DEFAULT '',
+			attempts tinyint(3) unsigned NOT NULL DEFAULT 0,
+			last_error text NOT NULL,
+			created_at datetime NOT NULL,
+			sent_at datetime DEFAULT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY event_key (event_key),
+			KEY status (status)
+		) {$charset_collate};"
+	);
+
 	update_option( 'drift_ticker_db_version', DRIFT_TICKER_DB_VERSION, false );
 }
 
@@ -97,6 +129,7 @@ function drift_ticker_activate() {
  */
 function drift_ticker_deactivate() {
 	wp_clear_scheduled_hook( DRIFT_TICKER_CRON_DAILY );
+	wp_clear_scheduled_hook( DRIFT_TICKER_CRON_WEEKLY );
 }
 
 add_action( 'admin_init', 'drift_ticker_maybe_upgrade' );

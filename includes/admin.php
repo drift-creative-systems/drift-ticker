@@ -66,6 +66,66 @@ function drift_ticker_register_settings() {
 		'drift_ticker_tracking',
 		array( 'label_for' => 'drift_ticker_extra_slugs' )
 	);
+
+	// Alerts.
+	$alert_fields = array(
+		'drift_ticker_make_webhook'  => array( __( 'Make webhook URL', 'drift-ticker' ), 'drift_ticker_sanitize_webhook', 'url', __( 'Receives every alert as JSON: event, slug, plugin_name, values, url, timestamp.', 'drift-ticker' ) ),
+		'drift_ticker_slack_webhook' => array( __( 'Slack webhook URL', 'drift-ticker' ), 'drift_ticker_sanitize_webhook', 'url', __( 'Optional. A Slack incoming webhook (https://hooks.slack.com/…).', 'drift-ticker' ) ),
+		'drift_ticker_alert_email'   => array( __( 'Email address', 'drift-ticker' ), 'drift_ticker_sanitize_alert_email', 'email', __( 'Optional. Sent with wp_mail().', 'drift-ticker' ) ),
+	);
+
+	add_settings_section( 'drift_ticker_alerts', __( 'Alerts', 'drift-ticker' ), 'drift_ticker_render_alerts_intro', DRIFT_TICKER_PAGE_SLUG );
+
+	foreach ( $alert_fields as $option => $field ) {
+		register_setting(
+			DRIFT_TICKER_OPTION_GROUP,
+			$option,
+			array(
+				'type'              => 'string',
+				'sanitize_callback' => $field[1],
+				'default'           => '',
+				'show_in_rest'      => false,
+			)
+		);
+		add_settings_field(
+			$option,
+			$field[0],
+			'drift_ticker_render_alert_field',
+			DRIFT_TICKER_PAGE_SLUG,
+			'drift_ticker_alerts',
+			array(
+				'label_for'   => $option,
+				'type'        => $field[2],
+				'description' => $field[3],
+			)
+		);
+	}
+}
+
+/**
+ * Alerts section intro.
+ *
+ * @return void
+ */
+function drift_ticker_render_alerts_intro() {
+	echo '<p>' . esc_html__( 'Alerts go out when a plugin goes live, gets a new rating (flagged under 4 stars) or support thread, passes a download milestone (100, 500, 1k, 5k, 10k…), changes active installs band or releases a new version, plus a summary every Monday at 08:30 UK time. Each one is sent once.', 'drift-ticker' ) . '</p>';
+}
+
+/**
+ * A URL or email field for the alerts section.
+ *
+ * @param array $args label_for, type, description.
+ * @return void
+ */
+function drift_ticker_render_alert_field( $args ) {
+	$option = $args['label_for'];
+	printf(
+		'<input type="%1$s" id="%2$s" name="%2$s" value="%3$s" class="regular-text code" aria-describedby="%2$s-help" autocomplete="off"><p class="description" id="%2$s-help">%4$s</p>',
+		esc_attr( $args['type'] ),
+		esc_attr( $option ),
+		esc_attr( (string) get_option( $option, '' ) ),
+		esc_html( $args['description'] )
+	);
 }
 
 /**
@@ -119,6 +179,7 @@ function drift_ticker_admin_assets( $hook_suffix ) {
 			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 			'nonce'   => wp_create_nonce( 'drift_ticker_refresh' ),
 			'i18n'    => array(
+				'sending'     => __( 'Sending…', 'drift-ticker' ),
 				'refreshing'  => __( 'Refreshing…', 'drift-ticker' ),
 				'failed'      => __( 'The refresh failed. Please try again.', 'drift-ticker' ),
 				/* translators: 1: number of downloads, 2: number of days */
@@ -452,9 +513,15 @@ function drift_ticker_render_settings_page() {
 			<?php settings_fields( DRIFT_TICKER_OPTION_GROUP ); ?>
 			<div class="drift-ticker__card">
 				<?php do_settings_sections( DRIFT_TICKER_PAGE_SLUG ); ?>
+				<p>
+					<button type="button" class="button" id="drift-ticker-test-alert"><?php esc_html_e( 'Send a test alert', 'drift-ticker' ); ?></button>
+					<span class="drift-ticker-muted" id="drift-ticker-test-message" role="status" aria-live="polite"><?php esc_html_e( 'Uses the saved settings: save first.', 'drift-ticker' ); ?></span>
+				</p>
 			</div>
 			<?php submit_button(); ?>
 		</form>
+
+		<?php echo drift_ticker_recent_alerts_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped while built. ?>
 
 		<?php if ( is_array( $log ) && $log ) : ?>
 			<div class="drift-ticker__card">
@@ -472,6 +539,104 @@ function drift_ticker_render_settings_page() {
 		<?php endif; ?>
 	</div>
 	<?php
+}
+
+/**
+ * Recent alerts card: the last 20 events and where they went.
+ *
+ * @return string
+ */
+function drift_ticker_recent_alerts_html() {
+	global $wpdb;
+	$table = drift_ticker_events_table();
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Custom table; admin only.
+	$rows = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY id DESC LIMIT 20", ARRAY_A );
+	if ( ! $rows ) {
+		return '';
+	}
+
+	$statuses = array(
+		'sent'        => __( 'Sent', 'drift-ticker' ),
+		'partial'     => __( 'Partly sent', 'drift-ticker' ),
+		'failed'      => __( 'Failed', 'drift-ticker' ),
+		'pending'     => __( 'Sending', 'drift-ticker' ),
+		'no_channels' => __( 'Not sent (no channels set)', 'drift-ticker' ),
+	);
+
+	ob_start();
+	?>
+	<div class="drift-ticker__card">
+		<h2><?php esc_html_e( 'Recent alerts', 'drift-ticker' ); ?></h2>
+		<div class="drift-ticker__scroll">
+			<table class="widefat striped">
+				<thead>
+					<tr>
+						<th scope="col"><?php esc_html_e( 'When', 'drift-ticker' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Alert', 'drift-ticker' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Status', 'drift-ticker' ); ?></th>
+						<th scope="col"><?php esc_html_e( 'Sent to', 'drift-ticker' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php
+					foreach ( $rows as $row ) :
+						$payload = json_decode( (string) $row['payload'], true );
+						$message = is_array( $payload ) ? drift_ticker_event_message( $payload ) : array( 'title' => $row['event_key'] );
+						?>
+						<tr>
+							<td><?php echo esc_html( drift_ticker_format_date( $row['created_at'], true ) ); ?></td>
+							<td><?php echo esc_html( $message['title'] ); ?></td>
+							<td>
+								<?php echo esc_html( $statuses[ $row['status'] ] ?? $row['status'] ); ?>
+								<?php if ( $row['last_error'] ) : ?>
+									<br><span class="drift-ticker-error"><?php echo esc_html( $row['last_error'] ); ?></span>
+								<?php endif; ?>
+							</td>
+							<td><?php echo esc_html( str_replace( ',', ', ', (string) $row['channels'] ) ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		</div>
+	</div>
+	<?php
+	return (string) ob_get_clean();
+}
+
+add_action( 'wp_ajax_drift_ticker_test_alert', 'drift_ticker_ajax_test_alert' );
+/**
+ * "Send a test alert": sends a "test" event to the saved channels. Each test
+ * has its own key, so it always sends.
+ *
+ * @return void
+ */
+function drift_ticker_ajax_test_alert() {
+	try {
+		check_ajax_referer( 'drift_ticker_refresh', 'nonce' );
+
+		if ( ! current_user_can( drift_ticker_capability() ) ) {
+			wp_send_json_error( array( 'message' => __( 'You are not allowed to do that.', 'drift-ticker' ) ), 403 );
+		}
+		if ( ! drift_ticker_alert_channels() ) {
+			wp_send_json_error( array( 'message' => __( 'No channels saved yet. Add a webhook URL or email address and save.', 'drift-ticker' ) ), 400 );
+		}
+
+		$status   = drift_ticker_send_event( 'test', '', array( 'plugin_name' => 'Drift: Ticker' ), 'test:' . wp_generate_uuid4() );
+		$messages = array(
+			'sent'    => __( 'Test alert sent to every channel.', 'drift-ticker' ),
+			'partial' => __( 'Sent to some channels only. See Recent alerts and the fetch log.', 'drift-ticker' ),
+			'failed'  => __( 'The test alert failed. See the fetch log.', 'drift-ticker' ),
+		);
+		$message  = $messages[ $status ] ?? __( 'The test alert could not be sent.', 'drift-ticker' );
+
+		if ( 'sent' === $status ) {
+			wp_send_json_success( array( 'message' => $message ) );
+		}
+		wp_send_json_error( array( 'message' => $message ), 502 );
+	} catch ( Throwable $e ) {
+		drift_ticker_log( '', $e->getMessage() );
+		wp_send_json_error( array( 'message' => __( 'Something went wrong. Please try again.', 'drift-ticker' ) ), 500 );
+	}
 }
 
 add_action( 'wp_ajax_drift_ticker_refresh', 'drift_ticker_ajax_refresh' );

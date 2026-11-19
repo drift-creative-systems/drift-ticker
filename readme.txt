@@ -19,6 +19,7 @@ Drift: Ticker takes a snapshot of your WordPress.org plugins once a day and keep
 * Shows plugins that haven't been approved yet as pending, and marks them live when WordPress.org lists them.
 * Refresh now button on the settings screen.
 * Failed checks never overwrite good data. They're listed in a log on the settings screen.
+* Alerts to a Make webhook, Slack or email: plugin goes live, new rating (flagged under 4 stars), new support thread, download milestones, active installs changes and new versions, plus a weekly summary on Monday mornings. Each alert is sent once.
 
 Notes on the numbers:
 
@@ -37,6 +38,13 @@ Notes on the numbers:
 This plugin connects to the WordPress.org Plugins API (api.wordpress.org) to read public statistics for the plugin slugs you choose to track. It sends only the plugin slug and the list of fields wanted, once a day by WP-Cron and when an administrator clicks Refresh now. Nothing about your site's visitors is sent, and no requests are made when visitors load your pages.
 
 WordPress.org privacy policy: [wordpress.org/about/privacy](https://wordpress.org/about/privacy/).
+
+Alerts are off until you add a destination. If you add a Make or Slack webhook URL, the plugin sends alerts there (plugin slug and name, the numbers that changed, a link and a timestamp) when an event happens and once a week. Nothing about your site's visitors is included.
+
+* Make: [terms](https://www.make.com/en/terms-and-conditions) and [privacy notice](https://www.make.com/en/privacy-notice).
+* Slack: [terms](https://slack.com/terms-of-service) and [privacy policy](https://slack.com/trust/privacy/privacy-policy).
+
+Email alerts are sent through your site's own mail setup (`wp_mail()`).
 
 = Privacy =
 

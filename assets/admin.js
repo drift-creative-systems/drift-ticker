@@ -50,6 +50,25 @@
 
 	drift_ticker_render_charts();
 
+	// "Send a test alert".
+	var $test = $( '#drift-ticker-test-alert' );
+	var $testMessage = $( '#drift-ticker-test-message' );
+	$test.on( 'click.drift_ticker', function () {
+		$test.prop( 'disabled', true ).attr( 'aria-busy', 'true' );
+		$testMessage.text( i18n.sending );
+		$.post( settings.ajaxUrl, { action: 'drift_ticker_test_alert', nonce: settings.nonce } )
+			.done( function ( response ) {
+				$testMessage.text( ( response && response.data && response.data.message ) || i18n.failed );
+			} )
+			.fail( function ( xhr ) {
+				var data = xhr.responseJSON && xhr.responseJSON.data;
+				$testMessage.text( ( data && data.message ) || i18n.failed );
+			} )
+			.always( function () {
+				$test.prop( 'disabled', false ).removeAttr( 'aria-busy' );
+			} );
+	} );
+
 	if ( ! $button.length || ! settings.ajaxUrl ) {
 		return;
 	}

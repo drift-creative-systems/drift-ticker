@@ -14,6 +14,7 @@
 define( 'ABSPATH', __DIR__ . '/' );
 define( 'MINUTE_IN_SECONDS', 60 );
 define( 'HOUR_IN_SECONDS', 3600 );
+define( 'DAY_IN_SECONDS', 86400 );
 define( 'ARRAY_A', 'ARRAY_A' );
 
 $GLOBALS['dt_options']    = array();
@@ -113,6 +114,29 @@ function wp_date( $format, $timestamp = null, $tz = null ) {
 function current_time( $type, $gmt = 0 ) { return gmdate( 'Y-m-d H:i:s', dt_now() ); }
 function wp_next_scheduled( $hook ) { return false; }
 function wp_schedule_event() { return true; }
+function wp_schedule_single_event() { return true; }
+function wp_clear_scheduled_hook() { return 0; }
+function admin_url( $path = '' ) { return 'https://example.test/wp-admin/' . $path; }
+function esc_url_raw( $url, $protocols = null ) {
+	$scheme = strtolower( (string) parse_url( $url, PHP_URL_SCHEME ) );
+	return ( $protocols && ! in_array( $scheme, $protocols, true ) ) ? '' : filter_var( $url, FILTER_SANITIZE_URL );
+}
+function sanitize_email( $e ) { return trim( (string) $e ); }
+function is_email( $e ) { return false !== filter_var( $e, FILTER_VALIDATE_EMAIL ); }
+
+// Outgoing alerts: recorded, answered by $GLOBALS['dt_post'] ( $url, $body ) → response|WP_Error (default 200).
+$GLOBALS['dt_sent'] = array();
+function wp_remote_post( $url, $args = array() ) {
+	$GLOBALS['dt_sent'][] = array( 'url' => $url, 'body' => json_decode( $args['body'], true ) );
+	if ( isset( $GLOBALS['dt_post'] ) && is_callable( $GLOBALS['dt_post'] ) ) {
+		return call_user_func( $GLOBALS['dt_post'], $url, $args['body'] );
+	}
+	return array( 'response' => array( 'code' => 200 ), 'body' => 'Accepted' );
+}
+function wp_mail( $to, $subject, $message ) {
+	$GLOBALS['dt_mail'][] = compact( 'to', 'subject', 'message' );
+	return $GLOBALS['dt_mail_ok'] ?? true;
+}
 
 // HTTP.
 function wp_remote_get( $url, $args = array() ) {
@@ -153,6 +177,7 @@ class DT_Wpdb {
 	public $options = 'wp_options';
 	public $pdo;
 	public $fail_writes = false;
+	public $insert_id   = 0;
 
 	public function __construct() {
 		$this->pdo = new PDO( 'sqlite::memory:' );
@@ -186,6 +211,21 @@ class DT_Wpdb {
 				UNIQUE (slug, stat_date)
 			)'
 		);
+		$this->pdo->exec(
+			'CREATE TABLE wp_drift_ticker_events (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				event_key TEXT NOT NULL UNIQUE,
+				event TEXT NOT NULL,
+				slug TEXT NOT NULL DEFAULT "",
+				payload TEXT NOT NULL,
+				status TEXT NOT NULL DEFAULT "pending",
+				channels TEXT NOT NULL DEFAULT "",
+				attempts INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				sent_at TEXT DEFAULT NULL
+			)'
+		);
 	}
 	public function prepare( $query, ...$args ) {
 		$pdo  = $this->pdo;
@@ -204,6 +244,7 @@ class DT_Wpdb {
 		$cols = array_keys( $data );
 		$st   = $this->pdo->prepare( "INSERT INTO {$table} (" . implode( ',', $cols ) . ') VALUES (' . implode( ',', array_fill( 0, count( $cols ), '?' ) ) . ')' );
 		$st->execute( array_values( $data ) );
+		$this->insert_id = (int) $this->pdo->lastInsertId();
 		return 1;
 	}
 	public function update( $table, $data, $where, $formats = null, $wf = null ) {
@@ -232,6 +273,10 @@ function dt_reset() {
 	$GLOBALS['wpdb']          = new DT_Wpdb();
 
 	$GLOBALS['dt_history_calls'] = 0;
+	$GLOBALS['dt_sent']          = array();
+	$GLOBALS['dt_mail']          = array();
+	$GLOBALS['dt_post']          = null;
+	$GLOBALS['dt_mail_ok']       = true;
 
 	$GLOBALS['drift_ticker_display_changed'] = false;
 }

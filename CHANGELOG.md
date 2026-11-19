@@ -27,3 +27,8 @@ All notable changes to this project are documented here. The format is based on 
 - Go-live: the app's `drift_status` becomes `wporg` (or `live` until the theme has `wporg`), and a `drift_ticker_event` "live" event is raised when a pending slug is approved.
 - One-off history backfill (up to 730 days) from the WordPress.org stats endpoint, only after the info API confirms the slug, checked against the all-time total, retried up to three times.
 - `Drift_Ticker_History_Source` interface for sources that can return past daily downloads.
+- Alerts to a Make webhook, Slack webhook and/or email: plugin live, new rating (per star, flagged under 4 stars), new support thread, download milestone, active installs band change, new version.
+- Weekly summary every Monday at 08:30 Europe/London: downloads this week vs last, totals and open threads per plugin.
+- `{prefix}drift_ticker_events` table (schema version 2): each alert is recorded by key and never sent twice; failed channels are retried up to three times.
+- Alert settings, "Send a test alert" and a "Recent alerts" list on the settings screen.
+- readme.txt discloses the optional Make and Slack connections.
