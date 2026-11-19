@@ -46,6 +46,8 @@ Alerts are off until you add a destination. If you add a Make or Slack webhook U
 
 Email alerts are sent through your site's own mail setup (`wp_mail()`).
 
+Updates: the plugin checks its GitHub repository (api.github.com, github.com/drift-creative-systems/drift-ticker) for new releases about twice a day, from wp-admin and WP-Cron, so updates show in Dashboard → Updates. Only the plugin's version is compared; no site data is sent. GitHub: [terms](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service) and [privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement).
+
 = Privacy =
 
 Drift: Ticker doesn't set cookies, track visitors or collect data about them.
@@ -58,7 +60,7 @@ Drift Creative Systems Ltd. Registered in England and Wales, company number 1754
 
 == Installation ==
 
-1. Upload the plugin and activate it.
+1. Download drift-ticker.zip from the latest release on GitHub, upload it under Plugins → Add New → Upload Plugin, and activate it. Later updates appear in Dashboard → Updates.
 2. Go to Settings → Drift: Ticker.
 3. Add the slugs to track, one per line, then click Save Changes and Refresh now.
 

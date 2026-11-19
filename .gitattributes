@@ -11,3 +11,5 @@
 /phpcs.xml.dist export-ignore
 /CLAUDE.md export-ignore
 /tests export-ignore
+/composer.json export-ignore
+/composer.lock export-ignore

@@ -11,6 +11,7 @@
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       drift-ticker
+ * Update URI:        https://github.com/drift-creative-systems/drift-ticker
  *
  * Copyright © 2026 Drift Creative Systems Ltd
  *

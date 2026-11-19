@@ -12,3 +12,5 @@ README.md
 CHANGELOG.md
 CLAUDE.md
 MEMORY.md
+composer.json
+composer.lock

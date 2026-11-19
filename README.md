@@ -4,7 +4,7 @@
 
 Internal plugin by **Drift Creative Systems**. Takes a daily snapshot of each Drift plugin on WordPress.org (downloads, active installs, rating, support threads, version), keeps the history in its own table and, in later steps, shows the numbers on driftcreativesystems.co.uk and sends alerts.
 
-- Not on WordPress.org. `readme.txt` is kept in .org format in case it's released later.
+- Repo: [github.com/drift-creative-systems/drift-ticker](https://github.com/drift-creative-systems/drift-ticker) (public). Not on WordPress.org: updates come from GitHub releases through Dashboard → Updates (`includes/updates.php`, Plugin Update Checker 5.x). `readme.txt` keeps the .org format, which the update screen's "View details" reads.
 - Licence: GPL-2.0-or-later
 - Requires WordPress 6.0+, PHP 7.4+. ACF Pro for the app field (optional: the slug is plain post meta).
 - Works with the `drift-create` theme's `drift_app` post type.
@@ -296,6 +296,8 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `includes/frontend.php` | `drift_ticker_get()`, suite totals, strip, button, shortcodes, page cache purge |
 | `assets/ticker.css` | Front-end strip styles |
 | `includes/cron.php` | WP-Cron schedule |
+| `includes/updates.php` | Updates from GitHub releases |
+| `vendor/` | Plugin Update Checker (Composer, committed) |
 | `includes/admin.php` | Settings → Drift: Ticker, table, chart cards, Refresh now |
 | `includes/export.php` | CSV export |
 | `assets/chart.js` | SVG bar chart |
@@ -311,7 +313,14 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 
 1. Bump the version in **three** places: the `Version:` header, `DRIFT_TICKER_VERSION` and `Stable tag:` in `readme.txt`. Add a changelog entry to both `readme.txt` and `CHANGELOG.md`.
 2. Merge `develop` → `main`, then publish a GitHub release tagged `vX.Y.Z`.
-3. `.github/workflows/release.yml` checks the three versions match, builds `drift-ticker.zip` from `.distignore` and attaches it to the release. Upload it on the site (Plugins → Add New → Upload).
+3. `.github/workflows/release.yml` checks the three versions match, builds `drift-ticker.zip` from `.distignore` (with `vendor/`) and attaches it to the release. Check the workflow run succeeded.
+4. Sites see the update in Dashboard → Updates within 12 hours (or Check again). First install: upload the zip by hand.
+
+### Updates and `vendor/`
+
+- `vendor/` is committed (only Plugin Update Checker). Update it with `composer update`, never by hand.
+- `composer.json` sets `config.autoloader-suffix` to `DriftTicker`. Without it the autoloader class name is a hash of the lock file, which matched the theme's, and loading both would be a fatal "cannot redeclare class". Keep it if you touch Composer.
+- The plugin header has `Update URI`, so WordPress.org never offers a different plugin with the same slug as an update.
 
 ## Licence
 

@@ -1,0 +1,13 @@
+{
+    "name": "drift-creative-systems/drift-ticker",
+    "description": "Drift: Ticker WordPress plugin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "yahnis-elsts/plugin-update-checker": "^5.6"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "autoloader-suffix": "DriftTicker"
+    }
+}

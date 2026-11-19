@@ -19,6 +19,7 @@ require DRIFT_TICKER_DIR . 'includes/frontend.php';
 require DRIFT_TICKER_DIR . 'includes/golive.php';
 require DRIFT_TICKER_DIR . 'includes/alerts.php';
 require DRIFT_TICKER_DIR . 'includes/modules.php';
+require DRIFT_TICKER_DIR . 'includes/updates.php';
 require DRIFT_TICKER_DIR . 'includes/cron.php';
 
 if ( is_admin() ) {

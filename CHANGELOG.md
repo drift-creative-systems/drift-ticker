@@ -2,9 +2,12 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-11-19
+
+First release.
 
 ### Added
+- Updates from GitHub releases in Dashboard → Updates (Plugin Update Checker via Composer, `vendor/` committed, autoloader suffix `DriftTicker` so it can't clash with the theme's copy). `Update URI` header set.
 - Plugin skeleton: header, duplicate-install guard, constants, `uninstall.php` (multisite aware), `readme.txt`, release workflow.
 - `{prefix}drift_ticker_snapshots` table (unique on slug + date) and `{prefix}drift_ticker_backfill` table, created with dbDelta on activation and re-checked on `admin_init` when `DRIFT_TICKER_DB_VERSION` changes.
 - "WordPress.org slug" field (`drift_wporg_slug`) on apps, registered in code in its own sidebar field group, with slug validation.
