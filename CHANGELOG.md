@@ -24,3 +24,6 @@ All notable changes to this project are documented here. The format is based on 
 - `drift_ticker_strip()` ("1,240 downloads · 100+ active installs · ★ 4.9 (12)") and `drift_ticker_button()` ("Download free from WordPress.org") for the app hero and cards. Theme placement is manual (README → Front end).
 - `assets/ticker.css`, loaded only while a slug is live; uses the theme's tokens and `.btn` classes.
 - Page cache purge (SG Optimizer) after a snapshot run that changed downloads, installs or ratings.
+- Go-live: the app's `drift_status` becomes `wporg` (or `live` until the theme has `wporg`), and a `drift_ticker_event` "live" event is raised when a pending slug is approved.
+- One-off history backfill (up to 730 days) from the WordPress.org stats endpoint, only after the info API confirms the slug, checked against the all-time total, retried up to three times.
+- `Drift_Ticker_History_Source` interface for sources that can return past daily downloads.

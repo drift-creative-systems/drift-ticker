@@ -17,7 +17,7 @@ Internal plugin by **Drift Creative Systems**. Takes a daily snapshot of each Dr
 | 2 | Daily snapshot cron, "Refresh now" | Done |
 | 3 | Admin table, charts and CSV export | Done |
 | 4 | Front-end function, shortcode, hero/card strip | Done (theme placement is manual, see below) |
-| 5 | Go-live detection and history backfill | |
+| 5 | Go-live detection and history backfill | Done (theme `wporg` status is manual, see below) |
 | 6 | Alerts and weekly summary | |
 | 7 | Stats in page modules | |
 
@@ -116,6 +116,47 @@ With that in place, a live free plugin has two accent buttons (download and "Boo
 
 The numbers are in the cached HTML. After a snapshot run that changed downloads, installs or ratings for any plugin, Ticker purges the whole page cache once (`sg_cachepress_purge_everything()`, or `sg_cachepress_purge_cache()` on older versions). The stats show on app pages, cards on home and suite pages, "More from Drift" on every app page, and wherever the shortcodes are used, so purging single URLs would miss pages. Other caches: hook `drift_ticker_purge_cache`.
 
+## Go-live and backfill
+
+`includes/golive.php`.
+
+**Go-live** (`drift_ticker_went_live`, the first good response for a slug):
+
+- The app's `drift_status` is set to `wporg` if the theme's `drift_app_statuses()` has it, otherwise `live` (Available now). The theme's `drift_app_meta()` turns unknown keys into `soon`, so Ticker never writes a key the theme doesn't know. "Coming soon", "In development" and "Demo available" are replaced; `live` or `wporg` set by hand is left alone. Written with ACF `update_field( 'field_drift_app_status', … )` when the field is loaded, post meta otherwise. Logged in the fetch log.
+- The WordPress.org URL isn't stored: it's always `https://wordpress.org/plugins/{slug}/` (`drift_ticker_wporg_url()`, `drift_ticker_get( $slug, 'url' )`, `drift_ticker_button()`). `drift_demo` isn't used: the theme shows it as "View demo".
+- **pending → live** (just approved) raises `do_action( 'drift_ticker_event', 'live', $slug, $values )`, which step 6 sends as the "Drift: Wipe is live on WordPress.org" alert. **unknown → live** (already live when first tracked) updates the status but raises no event.
+- The page cache is purged at the end of the run.
+
+**Backfill** (once per slug, after a saved snapshot):
+
+- Only after the info API has confirmed the slug, because `stats/plugin/1.0/downloads.php` makes up numbers for slugs that don't exist. Pending slugs never call it.
+- Up to 730 days, stored in `{prefix}drift_ticker_backfill` as daily counts (not totals), up to the day before the first snapshot. The charts and 7/30-day totals use it for days before tracking began.
+- Rejected (and logged) if it adds up to more than the confirmed all-time total plus 10%.
+- On failure it's retried on the next runs, three attempts at most. State keys `backfilled` (UTC datetime) and `backfill_attempts`.
+- The fetch is on `Drift_Ticker_History_Source`, which the WordPress.org source implements; a source without history skips it.
+
+### Theme change for the `wporg` status (drift-create, on `develop`)
+
+Until this is in, Ticker sets `live`. `inc/apps.php`:
+
+```php
+function drift_app_statuses(): array {
+	return [
+		'live'        => 'Available now',
+		'wporg'       => 'Free on WordPress.org',
+		'demo'        => 'Demo available',
+		'development' => 'In development',
+		'soon'        => 'Coming soon',
+	];
+}
+
+function drift_app_is_available( string $status ): bool {
+	return in_array( $status, [ 'live', 'wporg', 'demo' ], true );
+}
+```
+
+`assets/site.css`, lines 155, 156 and 230: add `.pill--wporg` next to `.pill--live` in all three selectors. Also add `"wporg": "Free on WordPress.org"` to the `drift_status` choices in `acf-json/group_drift_app_details.json` (fallback copy; bump `modified`). Then bump the theme version.
+
 ## Database
 
 `{prefix}drift_ticker_snapshots`
@@ -161,6 +202,8 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `drift_ticker_went_live` | action | `( $slug, $data, $app_id, $previous_status )`. First good response. `$previous_status` is `pending` when it's just been approved, `unknown` the first time an already-live slug is checked |
 | `drift_ticker_snapshot_saved` | action | `( $slug, $data, $previous_row, $app_id )` after each saved row |
 | `drift_ticker_snapshot_complete` | action | `( $results )`: `slug => saved / pending / error message` |
+| `drift_ticker_event` | action | `( $event, $slug, $values )`. Alert-worthy events; step 6 sends them. `live` in step 5 |
+| `drift_ticker_live_status` | filter | `drift_status` value written at go-live. Default `wporg` when the theme has it, else `live` |
 | `drift_ticker_suite_aliases` | filter | `alias => suite key` for `suite="…"`. Default `wp => agency` |
 | `drift_ticker_strip_html` | filter | `( $html, $slug, $args )` |
 | `drift_ticker_enqueue_styles` | filter | `false` to skip `assets/ticker.css` |
@@ -177,6 +220,7 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `includes/sources/` | `Drift_Ticker_Source` interface and the WordPress.org source |
 | `includes/snapshots.php` | Run, save and read snapshots |
 | `includes/stats.php` | Daily series, 7/30-day totals, labels (database only; used by the front end later) |
+| `includes/golive.php` | App status at go-live, `live` event, history backfill |
 | `includes/frontend.php` | `drift_ticker_get()`, suite totals, strip, button, shortcodes, page cache purge |
 | `assets/ticker.css` | Front-end strip styles |
 | `includes/cron.php` | WP-Cron schedule |

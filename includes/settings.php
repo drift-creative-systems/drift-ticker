@@ -109,7 +109,7 @@ function drift_ticker_get_states() {
  * State for one slug, with defaults filled in.
  *
  * @param string $slug Plugin slug.
- * @return array{status: string, live_since: string, last_checked: string, last_error: string, name: string}
+ * @return array{status: string, live_since: string, last_checked: string, last_error: string, name: string, backfilled: string, backfill_attempts: int}
  */
 function drift_ticker_get_state( $slug ) {
 	$states = drift_ticker_get_states();
@@ -117,11 +117,13 @@ function drift_ticker_get_state( $slug ) {
 	return wp_parse_args(
 		$state,
 		array(
-			'status'       => 'unknown', // unknown → pending | live. "closed" when WordPress.org closes it.
-			'live_since'   => '',
-			'last_checked' => '',
-			'last_error'   => '',
-			'name'         => '',
+			'status'            => 'unknown', // unknown → pending | live. "closed" when WordPress.org closes it.
+			'live_since'        => '',
+			'last_checked'      => '',
+			'last_error'        => '',
+			'name'              => '',
+			'backfilled'        => '', // UTC datetime the history was loaded (step 5).
+			'backfill_attempts' => 0,
 		)
 	);
 }

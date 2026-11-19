@@ -101,6 +101,8 @@ function wp_cache_delete( $key, $group = '' ) { unset( $GLOBALS['dt_cache'][ $gr
 function get_posts( $args ) { return array_keys( array_filter( $GLOBALS['dt_posts'], function ( $p ) { return '' !== ( $p['meta']['drift_wporg_slug'] ?? '' ); } ) ); }
 function get_post_meta( $id, $key, $single = false ) { return $GLOBALS['dt_posts'][ $id ]['meta'][ $key ] ?? ''; }
 function get_the_title( $id ) { return $GLOBALS['dt_posts'][ $id ]['title'] ?? ''; }
+function update_post_meta( $id, $key, $value ) { $GLOBALS['dt_posts'][ $id ]['meta'][ $key ] = $value; return true; }
+function add_query_arg( $args, $url ) { return $url . '?' . http_build_query( $args ); }
 
 // Time.
 function wp_date( $format, $timestamp = null, $tz = null ) {
@@ -114,12 +116,18 @@ function wp_schedule_event() { return true; }
 
 // HTTP.
 function wp_remote_get( $url, $args = array() ) {
-	$GLOBALS['dt_http_calls']++;
+	// Info API calls and history calls are counted apart.
+	if ( false !== strpos( $url, '/stats/plugin/' ) ) {
+		$GLOBALS['dt_history_calls'] = ( $GLOBALS['dt_history_calls'] ?? 0 ) + 1;
+	} else {
+		$GLOBALS['dt_http_calls']++;
+	}
 	if ( is_callable( $GLOBALS['dt_http'] ) ) {
 		return call_user_func( $GLOBALS['dt_http'], $url );
 	}
 	$ch = curl_init( $url );
-	curl_setopt_array( $ch, array( CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $args['timeout'] ?? 15, CURLOPT_USERAGENT => 'Drift-Ticker-Test' ) );
+	// HTTP/1.1, as WordPress's own HTTP client (Requests) uses.
+	curl_setopt_array( $ch, array( CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => $args['timeout'] ?? 15, CURLOPT_USERAGENT => 'Drift-Ticker-Test', CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1 ) );
 	// WordPress ships its own CA bundle; a bare PHP install may not have one. Set DT_CA_BUNDLE to a .crt file if needed.
 	if ( getenv( 'DT_CA_BUNDLE' ) ) {
 		curl_setopt( $ch, CURLOPT_CAINFO, getenv( 'DT_CA_BUNDLE' ) );
@@ -184,6 +192,10 @@ class DT_Wpdb {
 		$args = array_map( function ( $a ) use ( $pdo ) { return is_int( $a ) ? $a : $pdo->quote( (string) $a ); }, $args );
 		return vsprintf( str_replace( array( '%s', '%d' ), array( '%s', '%s' ), $query ), $args );
 	}
+	public function query( $sql ) {
+		if ( $this->fail_writes ) { return false; }
+		return $this->pdo->exec( $sql );
+	}
 	public function get_var( $sql ) { $r = $this->pdo->query( $sql )->fetch( PDO::FETCH_NUM ); return $r ? $r[0] : null; }
 	public function get_row( $sql, $output = null ) { $r = $this->pdo->query( $sql )->fetch( PDO::FETCH_ASSOC ); return $r ? $r : null; }
 	public function get_results( $sql, $output = null ) { return $this->pdo->query( $sql )->fetchAll( PDO::FETCH_ASSOC ); }
@@ -218,6 +230,8 @@ function dt_reset() {
 	$GLOBALS['dt_http_calls'] = 0;
 	$GLOBALS['dt_posts']      = array();
 	$GLOBALS['wpdb']          = new DT_Wpdb();
+
+	$GLOBALS['dt_history_calls'] = 0;
 
 	$GLOBALS['drift_ticker_display_changed'] = false;
 }

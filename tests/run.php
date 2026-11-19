@@ -424,6 +424,137 @@ dt_test( 'Front-end styles and page cache', function () {
 	dt_assert( 2 === $GLOBALS['dt_purges'], 'downloads changed next day → purge' );
 } );
 
+/**
+ * Mock for both endpoints: the info API answers from $info (404 when null),
+ * the stats endpoint from $history (a date → count array, or a callable).
+ */
+function dt_mock( $info, $history = array() ) {
+	$GLOBALS['dt_http'] = function ( $url ) use ( $info, $history ) {
+		if ( false !== strpos( $url, '/stats/plugin/' ) ) {
+			$body = is_callable( $history ) ? $history( $url ) : $history;
+			return $body instanceof WP_Error ? $body : array( 'response' => array( 'code' => 200 ), 'body' => json_encode( $body ) );
+		}
+		if ( null === $info ) {
+			return array( 'response' => array( 'code' => 404 ), 'body' => '{"error":"Plugin not found."}' );
+		}
+		return dt_api_ok( $info )( $url );
+	};
+}
+
+/** History: $days days ending yesterday, $per downloads each. */
+function dt_history( $days, $per ) {
+	$history = array();
+	for ( $i = $days; $i >= 1; $i-- ) {
+		$history[ gmdate( 'Y-m-d', strtotime( "-{$i} days", dt_now() ) ) ] = (string) $per;
+	}
+	return $history;
+}
+
+function dt_backfill_rows( $slug ) {
+	return $GLOBALS['wpdb']->get_results( "SELECT stat_date, downloads FROM wp_drift_ticker_backfill WHERE slug = '{$slug}' ORDER BY stat_date" );
+}
+
+dt_test( 'Go-live: pending → live updates the app and raises the event', function () {
+	$GLOBALS['dt_now']   = strtotime( '2026-11-19 03:15:00 UTC' );
+	$GLOBALS['dt_posts'] = array( 458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe', 'drift_status' => 'soon' ) ) );
+
+	dt_mock( null );
+	drift_ticker_run_snapshot( true );
+	dt_assert( 'soon' === get_post_meta( 458, 'drift_status', true ), 'still "soon" while pending' );
+	dt_assert( 0 === $GLOBALS['dt_history_calls'], 'stats endpoint never called while pending (it invents numbers for unknown slugs)' );
+
+	dt_mock( array( 'downloaded' => 40 ), dt_history( 3, 10 ) );
+	drift_ticker_run_snapshot( true );
+	dt_assert( 'live' === get_post_meta( 458, 'drift_status', true ), 'status → "live" when the theme has no "wporg" status' );
+
+	$events = dt_fired( 'drift_ticker_event' );
+	dt_assert( 1 === count( $events ) && 'live' === $events[0][1][0] && 'drift-wipe' === $events[0][1][1], 'one "live" event' );
+	dt_assert( 'Drift: Wipe' === $events[0][1][2]['plugin_name'] && 'https://wordpress.org/plugins/drift-wipe/' === $events[0][1][2]['url'], 'event has the app name and WordPress.org URL' );
+
+	drift_ticker_run_snapshot( true );
+	dt_assert( 1 === count( dt_fired( 'drift_ticker_event' ) ), 'no second "live" event' );
+} );
+
+dt_test( 'Go-live: "wporg" status when the theme has it; manual statuses respected', function () {
+	if ( ! function_exists( 'drift_app_statuses' ) ) {
+		// The theme's list with the new status added (step 5 theme change).
+		function drift_app_statuses() {
+			return array( 'live' => 'Available now', 'wporg' => 'Free on WordPress.org', 'demo' => 'Demo available', 'development' => 'In development', 'soon' => 'Coming soon' );
+		}
+	}
+	dt_assert( 'wporg' === drift_ticker_live_status(), 'theme knows "wporg" → use it' );
+
+	$GLOBALS['dt_posts'] = array(
+		458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe', 'drift_status' => 'demo' ) ),
+		459 => array( 'title' => 'Drift: Tags', 'meta' => array( 'drift_wporg_slug' => 'drift-tags', 'drift_status' => 'live' ) ),
+	);
+	dt_mock( null );
+	drift_ticker_run_snapshot( true );
+	dt_mock( array( 'downloaded' => 40 ), array() );
+	drift_ticker_run_snapshot( true );
+
+	dt_assert( 'wporg' === get_post_meta( 458, 'drift_status', true ), '"demo" → "wporg"' );
+	dt_assert( 'live' === get_post_meta( 459, 'drift_status', true ), '"live" set by hand is left alone' );
+} );
+
+dt_test( 'Go-live: a slug already live when first tracked', function () {
+	$GLOBALS['dt_posts'] = array( 458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe', 'drift_status' => 'soon' ) ) );
+	dt_mock( array( 'downloaded' => 40 ), dt_history( 3, 10 ) );
+	drift_ticker_run_snapshot( true );
+
+	dt_assert( 'soon' !== get_post_meta( 458, 'drift_status', true ), 'app status still updated' );
+	dt_assert( 0 === count( dt_fired( 'drift_ticker_event' ) ), 'no "is live" event: it isn\'t news' );
+	dt_assert( 3 === count( dt_backfill_rows( 'drift-wipe' ) ), 'history still backfilled' );
+} );
+
+dt_test( 'Backfill', function () {
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 03:15:00 UTC' );
+	dt_track( array( 'drift-wipe' ) );
+	$history                 = dt_history( 5, 10 );
+	$history['2026-11-19']   = 0;        // The endpoint includes today as 0.
+	$history['bad-key']      = '5';      // Ignored.
+	$history['2026-11-01']   = 'lots';   // Ignored.
+	dt_mock( array( 'downloaded' => 60 ), $history );
+	drift_ticker_run_snapshot( true );
+
+	$rows = dt_backfill_rows( 'drift-wipe' );
+	dt_assert( 5 === count( $rows ) && '2026-11-14' === $rows[0]['stat_date'] && '2026-11-18' === end( $rows )['stat_date'], 'five days stored, up to the day before the first snapshot' );
+	dt_assert( '' !== drift_ticker_get_state( 'drift-wipe' )['backfilled'], 'state marked backfilled' );
+	dt_assert( 1 === $GLOBALS['dt_history_calls'], 'one history call' );
+
+	drift_ticker_run_snapshot( true );
+	dt_assert( 1 === $GLOBALS['dt_history_calls'], 'never fetched again' );
+
+	$series = drift_ticker_daily_series( 'drift-wipe', 7 );
+	dt_assert( array( null, 10, 10, 10, 10, 10, null ) === array_column( $series, 'downloads' ), 'chart series uses the backfill before tracking began' );
+} );
+
+dt_test( 'Backfill rejects made-up numbers and retries failures three times', function () {
+	dt_track( array( 'drift-wipe' ) );
+	dt_mock( array( 'downloaded' => 50 ), dt_history( 30, 1000 ) ); // 30,000 ≫ 50.
+	drift_ticker_run_snapshot( true );
+	dt_assert( 0 === count( dt_backfill_rows( 'drift-wipe' ) ), 'history adding up to more than the total is rejected' );
+	dt_assert( false !== strpos( get_option( 'drift_ticker_log' )[0]['message'], 'more than the' ), 'and logged' );
+	dt_assert( '' === drift_ticker_get_state( 'drift-wipe' )['backfilled'], 'not marked backfilled' );
+
+	dt_mock( array( 'downloaded' => 50 ), function () { return new WP_Error( 'http_request_failed', 'timed out' ); } );
+	drift_ticker_run_snapshot( true );
+	drift_ticker_run_snapshot( true );
+	drift_ticker_run_snapshot( true );
+	dt_assert( 3 === $GLOBALS['dt_history_calls'], 'three attempts in total, then it stops' );
+	dt_assert( 3 === drift_ticker_get_state( 'drift-wipe' )['backfill_attempts'], 'attempts counted' );
+} );
+
+dt_test( 'Backfill database failure', function () {
+	dt_track( array( 'drift-wipe' ) );
+	dt_mock( array( 'downloaded' => 50 ), dt_history( 3, 10 ) );
+	drift_ticker_run_snapshot( true ); // Snapshot saved; backfill below.
+	$GLOBALS['wpdb']->fail_writes = true;
+	drift_ticker_update_state( 'drift-wipe', array( 'backfilled' => '', 'backfill_attempts' => 0 ) );
+	$result = drift_ticker_backfill( 'drift-wipe', 50 );
+	dt_assert( is_wp_error( $result ) && '' === drift_ticker_get_state( 'drift-wipe' )['backfilled'], 'DB error → WP_Error, not marked backfilled' );
+} );
+
 // ---------------------------------------------------------------------------
 
 if ( in_array( '--live', $argv, true ) ) {

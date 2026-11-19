@@ -10,9 +10,10 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Fetches and normalises one plugin's stats from api.wordpress.org.
  */
-class Drift_Ticker_Source_Wporg implements Drift_Ticker_Source {
+class Drift_Ticker_Source_Wporg implements Drift_Ticker_Source, Drift_Ticker_History_Source {
 
 	const ENDPOINT  = 'https://api.wordpress.org/plugins/info/1.2/';
+	const STATS_URL = 'https://api.wordpress.org/stats/plugin/1.0/downloads.php';
 	const CACHE_TTL = 6 * HOUR_IN_SECONDS;
 	const TIMEOUT   = 15;
 
@@ -174,6 +175,60 @@ class Drift_Ticker_Source_Wporg implements Drift_Ticker_Source {
 			'version'                  => substr( sanitize_text_field( (string) ( $body['version'] ?? '' ) ), 0, 40 ),
 			'last_updated'             => self::parse_date( (string) ( $body['last_updated'] ?? '' ) ),
 		);
+	}
+
+	/**
+	 * Daily downloads from the unofficial stats endpoint. It returns made-up
+	 * numbers for slugs that don't exist, so the caller must only use it after
+	 * fetch() has confirmed the slug (drift_ticker_maybe_backfill() does).
+	 * Not cached: it runs once per slug.
+	 *
+	 * @param string $slug Plugin slug.
+	 * @param int    $days Days back (the endpoint's "limit"), at most 730.
+	 * @return array<string, int>|WP_Error
+	 */
+	public function fetch_history( $slug, $days = 730 ) {
+		if ( ! drift_ticker_is_valid_slug( $slug ) ) {
+			return new WP_Error( 'drift_ticker_bad_slug', __( 'Not a valid WordPress.org slug.', 'drift-ticker' ) );
+		}
+
+		$url = add_query_arg(
+			array(
+				'slug'  => rawurlencode( $slug ),
+				'limit' => min( 730, max( 1, absint( $days ) ) ),
+			),
+			self::STATS_URL
+		);
+
+		$response = wp_remote_get(
+			$url,
+			array(
+				'timeout' => self::TIMEOUT,
+				'headers' => array( 'Accept' => 'application/json' ),
+			)
+		);
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		if ( 200 !== $code || ! is_array( $body ) ) {
+			/* translators: %d: HTTP status code */
+			return new WP_Error( 'drift_ticker_bad_history', sprintf( __( 'The download history couldn\'t be read (HTTP %d).', 'drift-ticker' ), $code ) );
+		}
+
+		$history = array();
+		foreach ( $body as $date => $count ) {
+			// Keys are dates, values numeric strings (or 0 for today).
+			if ( ! is_string( $date ) || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) || ! is_numeric( $count ) ) {
+				continue;
+			}
+			$history[ $date ] = absint( $count );
+		}
+		ksort( $history );
+
+		return $history;
 	}
 
 	/**
