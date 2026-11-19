@@ -25,6 +25,13 @@ Notes on the numbers:
 * WordPress.org shows active installs in bands (10+, 100+, 1,000+…), not exact counts.
 * Downloads include updates, not just new installs.
 
+= Showing the numbers =
+
+* `[drift_ticker slug="your-plugin" stat="downloaded"]` prints one number. Other stats: `active_installs`, `stars`, `num_ratings`, `open_threads`, `last_7`, `last_30`, `version`.
+* `[drift_ticker_strip slug="your-plugin"]` prints "1,240 downloads · 100+ active installs · ★ 4.9 (12)" and a download button.
+* Plugins that aren't on WordPress.org yet print nothing.
+* Pages read the stored numbers only. Nothing is fetched while visitors browse, and page caches are cleared after the numbers change.
+
 = External services =
 
 This plugin connects to the WordPress.org Plugins API (api.wordpress.org) to read public statistics for the plugin slugs you choose to track. It sends only the plugin slug and the list of fields wanted, once a day by WP-Cron and when an administrator clicks Refresh now. Nothing about your site's visitors is sent, and no requests are made when visitors load your pages.

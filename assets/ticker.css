@@ -1,0 +1,71 @@
+/*
+ * Drift: Ticker front end: the stats strip and shortcode values.
+ * Uses the drift-create theme tokens (--muted, --fg, --app) with fallbacks,
+ * and the theme's .btn classes for the button. Turn this file off with the
+ * drift_ticker_enqueue_styles filter to style it in the theme instead.
+ */
+
+.drift-ticker-strip {
+	margin: 1rem 0 0;
+}
+
+.drift-ticker-strip__stats {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	color: var(--muted, #6b7079);
+	font-size: 0.95rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.drift-ticker-strip__stats li {
+	margin: 0;
+}
+
+/* Middle-dot separators, drawn in CSS so screen readers don't read them. */
+.drift-ticker-strip__stats li + li::before {
+	content: "\00b7";
+	margin: 0 0.5em;
+	color: var(--muted, #6b7079);
+}
+
+.drift-ticker-strip--hero .drift-ticker-strip__stats {
+	color: var(--fg, #08090b);
+}
+
+.drift-ticker-strip--card {
+	margin-top: 0.75rem;
+}
+
+.drift-ticker-strip--card .drift-ticker-strip__stats {
+	font-size: 0.85rem;
+}
+
+.drift-ticker-strip__action {
+	margin: 1rem 0 0;
+}
+
+/* Inside a card the title link covers the card; lift a button above it. */
+.drift-ticker-strip--card .drift-ticker-strip__action {
+	position: relative;
+	z-index: 1;
+}
+
+.drift-ticker-value {
+	font-variant-numeric: tabular-nums;
+}
+
+.drift-ticker-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}

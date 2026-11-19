@@ -16,7 +16,7 @@ Internal plugin by **Drift Creative Systems**. Takes a daily snapshot of each Dr
 | 1 | Plugin skeleton, tables, WordPress.org slug field | Done |
 | 2 | Daily snapshot cron, "Refresh now" | Done |
 | 3 | Admin table, charts and CSV export | Done |
-| 4 | Front-end function, shortcode, hero/card strip | |
+| 4 | Front-end function, shortcode, hero/card strip | Done (theme placement is manual, see below) |
 | 5 | Go-live detection and history backfill | |
 | 6 | Alerts and weekly summary | |
 | 7 | Stats in page modules | |
@@ -54,6 +54,67 @@ wget -q -O - "https://driftcreativesystems.co.uk/wp-cron.php?doing_wp_cron" >/de
 
 - WordPress.org shows active installs in bands (10+, 100+, 1,000+…), not exact counts.
 - The download count includes updates, not just new installs.
+
+## Front end
+
+`includes/frontend.php`. Reads the database only: no API calls on page load, no cookies, no tracking. A plugin that isn't live (pending, closed, or no snapshot yet) prints **nothing**, never a zero or "N/A".
+
+### Functions
+
+| Function | Returns |
+|---|---|
+| `drift_ticker_get( $slug, $stat )` | Raw value, or `null`. Stats: `downloaded`, `active_installs` (band floor), `rating` (0–100), `stars` (0–5, one decimal), `num_ratings`, `support_threads`, `open_threads`, `last_7`, `last_30`, `version`, `last_updated` (UTC), `url`, `name` |
+| `drift_ticker_get_suite( $suite, $stat )` | Across a suite: sums (`downloaded`, `active_installs`, `num_ratings`, threads, `last_7`, `last_30`), `count` (live plugins), `rating` / `stars` (weighted by number of ratings). `$suite` is a theme suite key, `wp` (alias of `agency`, filter `drift_ticker_suite_aliases`) or `all` |
+| `drift_ticker_format( $stat, $value )` | Display string: `number_format_i18n()`, installs as "100+", stars "4.9", dates DD/MM/YYYY; `''` for null |
+| `drift_ticker_strip( $app_id_or_slug, $args )` | "1,240 downloads · 100+ active installs · ★ 4.9 (12)" plus the WordPress.org button. `context` `hero` (default, with button) or `card` (no button: the card is already a link). Installs under 10 and "no ratings" are left out |
+| `drift_ticker_button( $app_id_or_slug, $class, $text )` | Just the "Download free from WordPress.org" link. Default class `btn btn--accent` (theme buttons) |
+| `drift_ticker_is_live( $slug )` | Live with a snapshot |
+
+### Shortcodes
+
+```text
+[drift_ticker slug="drift-wipe" stat="downloaded"]      → 1,240
+[drift_ticker slug="drift-wipe" stat="active_installs"] → 100+
+[drift_ticker suite="wp" stat="downloaded"]             → 18,000
+[drift_ticker suite="wp" stat="count"]                  → 8
+[drift_ticker_strip slug="drift-wipe" button="no"]      → the strip (no slug = the current app)
+```
+
+### Theme placement (drift-create)
+
+Ticker doesn't change the theme. To show the strip, add these by hand:
+
+`single-drift_app.php`, after the `app__status` paragraph and before `<p class="btns">`:
+
+```php
+<?php
+if ( function_exists( 'drift_ticker_strip' ) ) {
+	echo drift_ticker_strip( get_the_ID(), array( 'button' => false ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in the plugin.
+}
+?>
+```
+
+and inside `<p class="btns">`, before the demo link, so the download is the first button in the row:
+
+```php
+<?php echo function_exists( 'drift_ticker_button' ) ? drift_ticker_button( get_the_ID() ) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in the plugin. ?>
+```
+
+With that in place, a live free plugin has two accent buttons (download and "Book a demo"). Consider making the theme's CTA `btn--line` when the status is `wporg` (step 5).
+
+`parts/app-card.php`, after the platform tags:
+
+```php
+<?php echo function_exists( 'drift_ticker_strip' ) ? drift_ticker_strip( $app->ID, array( 'context' => 'card' ) ) : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in the plugin. ?>
+```
+
+### Styles
+
+`assets/ticker.css` (about 1 KB) loads on the front end only while at least one slug is live. It uses the theme's `--muted` / `--fg` tokens and middle-dot separators drawn in CSS. Return `false` from `drift_ticker_enqueue_styles` to style it in the theme instead. Classes: `.drift-ticker-strip`, `--hero` / `--card`, `__stats`, `__action`, `.drift-ticker-value--{stat}`.
+
+### Page cache (SG Optimizer)
+
+The numbers are in the cached HTML. After a snapshot run that changed downloads, installs or ratings for any plugin, Ticker purges the whole page cache once (`sg_cachepress_purge_everything()`, or `sg_cachepress_purge_cache()` on older versions). The stats show on app pages, cards on home and suite pages, "More from Drift" on every app page, and wherever the shortcodes are used, so purging single URLs would miss pages. Other caches: hook `drift_ticker_purge_cache`.
 
 ## Database
 
@@ -100,6 +161,10 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `drift_ticker_went_live` | action | `( $slug, $data, $app_id, $previous_status )`. First good response. `$previous_status` is `pending` when it's just been approved, `unknown` the first time an already-live slug is checked |
 | `drift_ticker_snapshot_saved` | action | `( $slug, $data, $previous_row, $app_id )` after each saved row |
 | `drift_ticker_snapshot_complete` | action | `( $results )`: `slug => saved / pending / error message` |
+| `drift_ticker_suite_aliases` | filter | `alias => suite key` for `suite="…"`. Default `wp => agency` |
+| `drift_ticker_strip_html` | filter | `( $html, $slug, $args )` |
+| `drift_ticker_enqueue_styles` | filter | `false` to skip `assets/ticker.css` |
+| `drift_ticker_purge_cache` | action | After a run that changed what visitors see. For caches other than SG Optimizer |
 
 ## Files
 
@@ -112,6 +177,8 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `includes/sources/` | `Drift_Ticker_Source` interface and the WordPress.org source |
 | `includes/snapshots.php` | Run, save and read snapshots |
 | `includes/stats.php` | Daily series, 7/30-day totals, labels (database only; used by the front end later) |
+| `includes/frontend.php` | `drift_ticker_get()`, suite totals, strip, button, shortcodes, page cache purge |
+| `assets/ticker.css` | Front-end strip styles |
 | `includes/cron.php` | WP-Cron schedule |
 | `includes/admin.php` | Settings → Drift: Ticker, table, chart cards, Refresh now |
 | `includes/export.php` | CSV export |

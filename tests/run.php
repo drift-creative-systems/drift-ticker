@@ -316,6 +316,114 @@ dt_test( 'CSV', function () {
 	dt_assert( 5 === drift_ticker_csv_cell( 5 ) && '-' !== drift_ticker_csv_cell( '-1' )[0], 'numbers untouched; "-1" as text escaped' );
 } );
 
+/** Counts SiteGround purges. */
+function sg_cachepress_purge_everything() {
+	$GLOBALS['dt_purges'] = ( $GLOBALS['dt_purges'] ?? 0 ) + 1;
+}
+
+/** Tracks three apps (two WP Suite, one Music) and runs one live snapshot each. */
+function dt_live_apps() {
+	$GLOBALS['dt_posts'] = array(
+		458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe', 'drift_suite' => 'agency' ) ),
+		459 => array( 'title' => 'Drift: Tags', 'meta' => array( 'drift_wporg_slug' => 'drift-tags', 'drift_suite' => 'agency' ) ),
+		460 => array( 'title' => 'Drift: Curtain', 'meta' => array( 'drift_wporg_slug' => 'drift-curtain', 'drift_suite' => 'music' ) ),
+		461 => array( 'title' => 'Drift: Pending', 'meta' => array( 'drift_wporg_slug' => 'drift-pending', 'drift_suite' => 'agency' ) ),
+	);
+	$responses = array(
+		'drift-wipe'    => array( 'slug' => 'drift-wipe', 'downloaded' => 1240, 'active_installs' => 100, 'rating' => 98, 'num_ratings' => 12, 'version' => '1.1.0' ),
+		'drift-tags'    => array( 'slug' => 'drift-tags', 'downloaded' => 1, 'active_installs' => 0, 'rating' => 0, 'num_ratings' => 0, 'version' => '1.0.0' ),
+		'drift-curtain' => array( 'slug' => 'drift-curtain', 'downloaded' => 500, 'active_installs' => 10, 'rating' => 80, 'num_ratings' => 4, 'version' => '1.0.0' ),
+	);
+	$GLOBALS['dt_http'] = function ( $url ) use ( $responses ) {
+		foreach ( $responses as $slug => $body ) {
+			if ( false !== strpos( $url, 'slug%5D=' . $slug . '&' ) ) {
+				return array( 'response' => array( 'code' => 200 ), 'body' => json_encode( $body + array( 'name' => $slug, 'support_threads' => 2, 'support_threads_resolved' => 1 ) ) );
+			}
+		}
+		return array( 'response' => array( 'code' => 404 ), 'body' => '{"error":"Plugin not found."}' );
+	};
+	drift_ticker_run_snapshot( true );
+}
+
+dt_test( 'drift_ticker_get()', function () {
+	dt_live_apps();
+	dt_assert( 1240 === drift_ticker_get( 'drift-wipe', 'downloaded' ), 'downloaded' );
+	dt_assert( 4.9 === drift_ticker_get( 'drift-wipe', 'stars' ) && 98 === drift_ticker_get( 'drift-wipe', 'rating' ), 'rating 98 → 4.9 stars' );
+	dt_assert( 1 === drift_ticker_get( 'drift-wipe', 'open_threads' ), 'open threads' );
+	dt_assert( 'https://wordpress.org/plugins/drift-wipe/' === drift_ticker_get( 'drift-wipe', 'url' ), 'url' );
+	dt_assert( null === drift_ticker_get( 'drift-wipe', 'last_7' ), 'last_7 null on the first day (nothing to compare yet)' );
+	dt_assert( null === drift_ticker_get( 'drift-pending', 'downloaded' ), 'pending slug → null' );
+	dt_assert( null === drift_ticker_get( 'drift-wipe', 'bogus' ), 'unknown stat → null' );
+	dt_assert( '100+' === drift_ticker_format( 'active_installs', 100 ) && '1,240' === drift_ticker_format( 'downloaded', 1240 ) && '' === drift_ticker_format( 'downloaded', null ), 'format' );
+} );
+
+dt_test( 'Suite totals', function () {
+	dt_live_apps();
+	dt_assert( 1241 === drift_ticker_get_suite( 'wp', 'downloaded' ), 'suite="wp" → agency: 1240 + 1, pending app ignored' );
+	dt_assert( 2 === drift_ticker_get_suite( 'wp', 'count' ), 'count of live plugins in the suite' );
+	dt_assert( 1741 === drift_ticker_get_suite( 'all', 'downloaded' ), 'suite="all" covers every live slug' );
+	// (12 × 98 + 4 × 80) / 16 = 93.5 → 94 → 4.7 stars.
+	dt_assert( 94 === drift_ticker_get_suite( 'all', 'rating' ) && 4.7 === drift_ticker_get_suite( 'all', 'stars' ), 'rating weighted by number of ratings' );
+	dt_assert( null === drift_ticker_get_suite( 'seo', 'downloaded' ), 'suite with nothing live → null' );
+	dt_assert( null === drift_ticker_get_suite( 'wp', 'version' ), 'per-plugin stat not summed → null' );
+} );
+
+dt_test( 'Strip and shortcodes', function () {
+	dt_live_apps();
+	$hero = drift_ticker_strip( 458 );
+	dt_assert( false !== strpos( $hero, '<li>1,240 downloads</li><li>100+ active installs</li>' ), 'hero: downloads and installs' );
+	dt_assert( false !== strpos( $hero, '&#9733; 4.9 (12)' ) && false !== strpos( $hero, 'Rated 4.9 out of 5 from 12 ratings' ), 'hero: rating with screen reader text' );
+	dt_assert( false !== strpos( $hero, 'href="https://wordpress.org/plugins/drift-wipe/"' ) && false !== strpos( $hero, 'Download free from WordPress.org' ), 'hero: WordPress.org button' );
+
+	$card = drift_ticker_strip( 458, array( 'context' => 'card' ) );
+	dt_assert( false === strpos( $card, 'btn' ) && false !== strpos( $card, 'drift-ticker-strip--card' ), 'card: no button by default' );
+
+	$tags = drift_ticker_strip( 'drift-tags', array( 'button' => false ) );
+	dt_assert( false !== strpos( $tags, '1 download</li></ul>' ) && false === strpos( $tags, 'installs' ) && false === strpos( $tags, '9733' ), 'singular download; installs under 10 and no ratings left out' );
+
+	dt_assert( '' === drift_ticker_strip( 461 ) && '' === drift_ticker_strip( 9999 ), 'pending app or app without slug → nothing' );
+	dt_assert( '<a class="btn btn--line" href="https://wordpress.org/plugins/drift-wipe/">Download free from WordPress.org</a>' === drift_ticker_button( 458, 'btn btn--line' ), 'drift_ticker_button() on its own' );
+	dt_assert( '' === drift_ticker_button( 461 ), 'no button for a pending app' );
+
+	dt_assert( '<span class="drift-ticker-value drift-ticker-value--downloaded">1,240</span>' === drift_ticker_shortcode( array( 'slug' => 'drift-wipe' ) ), '[drift_ticker slug="drift-wipe"]' );
+	dt_assert( false !== strpos( drift_ticker_shortcode( array( 'suite' => 'wp', 'stat' => 'count' ) ), '>2<' ), '[drift_ticker suite="wp" stat="count"]' );
+	dt_assert( '' === drift_ticker_shortcode( array( 'slug' => 'drift-pending' ) ), 'pending → empty, no zero' );
+
+	$GLOBALS['dt_current_post'] = 458;
+	dt_assert( false !== strpos( drift_ticker_strip_shortcode( array( 'button' => 'no' ) ), '1,240 downloads' ) && false === strpos( drift_ticker_strip_shortcode( array( 'button' => 'no' ) ), 'btn' ), '[drift_ticker_strip button="no"] uses the current app' );
+	unset( $GLOBALS['dt_current_post'] );
+} );
+
+dt_test( 'Front-end styles and page cache', function () {
+	$GLOBALS['dt_styles'] = array();
+	drift_ticker_enqueue_styles();
+	dt_assert( array() === $GLOBALS['dt_styles'], 'no stylesheet while nothing is live' );
+
+	$GLOBALS['dt_purges'] = 0;
+	dt_live_apps();
+	dt_assert( 1 === $GLOBALS['dt_purges'], 'first snapshot run → one purge for the whole run' );
+
+	drift_ticker_enqueue_styles();
+	dt_assert( array( 'drift-ticker' ) === $GLOBALS['dt_styles'], 'stylesheet once something is live' );
+
+	drift_ticker_run_snapshot( true ); // Same numbers again.
+	dt_assert( 1 === $GLOBALS['dt_purges'], 'nothing changed → no purge' );
+
+	$GLOBALS['dt_now'] = strtotime( '+1 day' );
+	$http              = $GLOBALS['dt_http'];
+	$GLOBALS['dt_http'] = function ( $url ) use ( $http ) {
+		$response = $http( $url );
+		$body     = json_decode( $response['body'], true );
+		if ( isset( $body['downloaded'] ) ) {
+			$body['downloaded'] += 5;
+		}
+		$response['body'] = json_encode( $body );
+		return $response;
+	};
+	drift_ticker_run_snapshot( true );
+	dt_assert( 2 === $GLOBALS['dt_purges'], 'downloads changed next day → purge' );
+} );
+
 // ---------------------------------------------------------------------------
 
 if ( in_array( '--live', $argv, true ) ) {

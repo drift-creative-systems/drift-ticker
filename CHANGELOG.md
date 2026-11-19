@@ -19,3 +19,8 @@ All notable changes to this project are documented here. The format is based on 
 - CSV export of every snapshot (all plugins or one), with daily downloads, star counts and open threads.
 - Refresh now updates the charts as well as the table.
 - Chart logic tests (`node tests/chart.test.js`).
+- `drift_ticker_get( $slug, $stat )` and `drift_ticker_get_suite( $suite, $stat )` (sums, count, weighted rating; `suite="wp"` is the theme's WP Suite), with `drift_ticker_format()`.
+- `[drift_ticker]` and `[drift_ticker_strip]` shortcodes. Plugins that aren't live print nothing.
+- `drift_ticker_strip()` ("1,240 downloads · 100+ active installs · ★ 4.9 (12)") and `drift_ticker_button()` ("Download free from WordPress.org") for the app hero and cards. Theme placement is manual (README → Front end).
+- `assets/ticker.css`, loaded only while a slug is live; uses the theme's tokens and `.btn` classes.
+- Page cache purge (SG Optimizer) after a snapshot run that changed downloads, installs or ratings.

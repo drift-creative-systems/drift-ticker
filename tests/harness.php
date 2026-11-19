@@ -40,10 +40,19 @@ class WP_Error {
 function dt_now() { return null === $GLOBALS['dt_now'] ? time() : $GLOBALS['dt_now']; }
 
 // Hooks.
-function add_action( $hook, $cb, $priority = 10, $args = 1 ) { $GLOBALS['dt_actions'][ $hook ][] = $cb; return true; }
+function add_action( $hook, $cb, $priority = 10, $args = 1 ) { $GLOBALS['dt_actions'][ $hook ][] = array( $cb, $args ); return true; }
 function add_filter( $hook, $cb, $priority = 10, $args = 1 ) { return add_action( $hook, $cb, $priority, $args ); }
 function apply_filters( $hook, $value, ...$args ) { return $value; }
-function do_action( $hook, ...$args ) { $GLOBALS['dt_fired'][] = array( $hook, $args ); }
+// Records the hook, then runs the plugin's own drift_ticker_* callbacks as WordPress would.
+function do_action( $hook, ...$args ) {
+	$GLOBALS['dt_fired'][] = array( $hook, $args );
+	if ( 0 !== strpos( $hook, 'drift_ticker_' ) ) {
+		return;
+	}
+	foreach ( $GLOBALS['dt_actions'][ $hook ] ?? array() as $callback ) {
+		call_user_func_array( $callback[0], array_slice( $args, 0, $callback[1] ) );
+	}
+}
 function register_activation_hook() {}
 function register_deactivation_hook() {}
 
@@ -53,6 +62,16 @@ function esc_html__( $text, $domain = '' ) { return $text; }
 function sanitize_text_field( $str ) { return trim( preg_replace( '/[\r\n\t ]+/', ' ', strip_tags( (string) $str ) ) ); }
 function absint( $v ) { return abs( (int) $v ); }
 function number_format_i18n( $n, $decimals = 0 ) { return number_format( $n, $decimals ); }
+function _n( $single, $plural, $n, $domain = '' ) { return 1 === (int) $n ? $single : $plural; }
+function esc_html( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' ); }
+function esc_attr( $s ) { return esc_html( $s ); }
+function esc_attr__( $s, $domain = '' ) { return esc_html( $s ); }
+function esc_url( $s ) { return esc_html( $s ); }
+function shortcode_atts( $pairs, $atts, $tag = '' ) { return array_merge( $pairs, array_intersect_key( (array) $atts, $pairs ) ); }
+function add_shortcode( $tag, $cb ) {}
+function get_the_ID() { return $GLOBALS['dt_current_post'] ?? 0; }
+function wp_list_pluck( $list, $field ) { return array_map( function ( $item ) use ( $field ) { return $item[ $field ] ?? null; }, (array) $list ); }
+function wp_enqueue_style( $handle ) { $GLOBALS['dt_styles'][] = $handle; }
 function sanitize_key( $key ) { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) ); }
 function wp_json_encode( $v ) { return json_encode( $v ); }
 function wp_parse_args( $args, $defaults ) { return array_merge( $defaults, (array) $args ); }
@@ -199,6 +218,8 @@ function dt_reset() {
 	$GLOBALS['dt_http_calls'] = 0;
 	$GLOBALS['dt_posts']      = array();
 	$GLOBALS['wpdb']          = new DT_Wpdb();
+
+	$GLOBALS['drift_ticker_display_changed'] = false;
 }
 
 /**
