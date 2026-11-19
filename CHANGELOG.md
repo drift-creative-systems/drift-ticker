@@ -1,0 +1,15 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Added
+- Plugin skeleton: header, duplicate-install guard, constants, `uninstall.php` (multisite aware), `readme.txt`, release workflow.
+- `{prefix}drift_ticker_snapshots` table (unique on slug + date) and `{prefix}drift_ticker_backfill` table, created with dbDelta on activation and re-checked on `admin_init` when `DRIFT_TICKER_DB_VERSION` changes.
+- "WordPress.org slug" field (`drift_wporg_slug`) on apps, registered in code in its own sidebar field group, with slug validation.
+- Daily snapshot of every tracked slug from the WordPress.org plugin info API (1.2), via WP-Cron at 03:15 Europe/London. Responses are trimmed, cached for 6 hours, and failures leave the last good row in place and are logged.
+- Pending / live / closed state per slug, and a `drift_ticker_went_live` action on the first good response.
+- `Drift_Ticker_Source` interface and `drift_ticker_source` filter, so a Freemius source can be added later.
+- Settings → Drift: Ticker in the Drift card style with the "D" mark: tracked plugins table, Refresh now (AJAX, nonce + capability), extra slugs setting, fetch log, and the copyright line in the admin footer.
+- Test harness (WordPress stubs + SQLite) with 43 tests, plus a live run against api.wordpress.org.
