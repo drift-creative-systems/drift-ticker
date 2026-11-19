@@ -99,7 +99,7 @@ function drift_ticker_admin_footer_text( $text ) {
 
 add_action( 'admin_enqueue_scripts', 'drift_ticker_admin_assets' );
 /**
- * Styles and script, on the settings screen only.
+ * Styles and scripts, on the settings screen only.
  *
  * @param string $hook_suffix Current admin page.
  * @return void
@@ -110,7 +110,8 @@ function drift_ticker_admin_assets( $hook_suffix ) {
 	}
 
 	wp_enqueue_style( 'drift-ticker-admin', DRIFT_TICKER_URL . 'assets/admin.css', array(), DRIFT_TICKER_VERSION );
-	wp_enqueue_script( 'drift-ticker-admin', DRIFT_TICKER_URL . 'assets/admin.js', array( 'jquery' ), DRIFT_TICKER_VERSION, true );
+	wp_enqueue_script( 'drift-ticker-chart', DRIFT_TICKER_URL . 'assets/chart.js', array( 'jquery' ), DRIFT_TICKER_VERSION, true );
+	wp_enqueue_script( 'drift-ticker-admin', DRIFT_TICKER_URL . 'assets/admin.js', array( 'jquery', 'drift-ticker-chart' ), DRIFT_TICKER_VERSION, true );
 	wp_localize_script(
 		'drift-ticker-admin',
 		'driftTicker',
@@ -118,8 +119,24 @@ function drift_ticker_admin_assets( $hook_suffix ) {
 			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 			'nonce'   => wp_create_nonce( 'drift_ticker_refresh' ),
 			'i18n'    => array(
-				'refreshing' => __( 'Refreshing…', 'drift-ticker' ),
-				'failed'     => __( 'The refresh failed. Please try again.', 'drift-ticker' ),
+				'refreshing'  => __( 'Refreshing…', 'drift-ticker' ),
+				'failed'      => __( 'The refresh failed. Please try again.', 'drift-ticker' ),
+				/* translators: 1: number of downloads, 2: number of days */
+				'total'       => __( '%1$s downloads in the last %2$s days', 'drift-ticker' ),
+				/* translators: %s: date */
+				'since'       => __( 'since %s', 'drift-ticker' ),
+				'noData'      => __( 'No data', 'drift-ticker' ),
+				'noDataRange' => __( 'No download data for this period yet.', 'drift-ticker' ),
+				'downloads'   => __( 'downloads', 'drift-ticker' ),
+				'version'     => __( 'Version', 'drift-ticker' ),
+				'date'        => __( 'Date', 'drift-ticker' ),
+				'week'        => __( 'Week', 'drift-ticker' ),
+				'colDownload' => __( 'Downloads', 'drift-ticker' ),
+				/* translators: 1: plugin name, 2: number of days */
+				'chartLabel'  => __( 'Daily downloads of %1$s, last %2$s days', 'drift-ticker' ),
+				/* translators: %s: plugin name */
+				'weekLabel'   => __( 'Weekly downloads of %s, last 52 weeks', 'drift-ticker' ),
+				'keyHint'     => __( 'Use the left and right arrow keys to read each bar.', 'drift-ticker' ),
 			),
 		)
 	);
@@ -163,8 +180,38 @@ function drift_ticker_status_labels() {
 }
 
 /**
+ * Display name for a tracked slug: the app title, else the WordPress.org name, else the slug.
+ *
+ * @param string $slug   Plugin slug.
+ * @param int    $app_id App post ID, or 0.
+ * @return string
+ */
+function drift_ticker_display_name( $slug, $app_id ) {
+	$name = $app_id ? get_the_title( $app_id ) : drift_ticker_get_state( $slug )['name'];
+	return $name ? $name : $slug;
+}
+
+/**
+ * A 7/30-day total for a table cell: "1,240", "1,240 since 15/11/2026" when the
+ * data starts inside the period, or an en dash when there's none.
+ *
+ * @param array $sum From drift_ticker_sum_series().
+ * @return string Escaped HTML.
+ */
+function drift_ticker_period_cell( array $sum ) {
+	if ( null === $sum['total'] ) {
+		return '&ndash;';
+	}
+	$html = esc_html( number_format_i18n( $sum['total'] ) );
+	if ( $sum['partial'] ) {
+		/* translators: %s: date */
+		$html .= '<br><span class="drift-ticker-muted">' . esc_html( sprintf( __( 'since %s', 'drift-ticker' ), drift_ticker_format_date( $sum['since'] ) ) ) . '</span>';
+	}
+	return $html;
+}
+
+/**
  * Tracked plugins table. Returned as HTML so "Refresh now" can swap it in.
- * Step 3 adds the 7/30-day columns and charts.
  *
  * @return string
  */
@@ -184,39 +231,146 @@ function drift_ticker_tracked_table_html() {
 				<th scope="col"><?php esc_html_e( 'Plugin', 'drift-ticker' ); ?></th>
 				<th scope="col"><?php esc_html_e( 'Status', 'drift-ticker' ); ?></th>
 				<th scope="col" class="num"><?php esc_html_e( 'Downloads', 'drift-ticker' ); ?></th>
+				<th scope="col" class="num"><?php esc_html_e( 'Last 7 days', 'drift-ticker' ); ?></th>
+				<th scope="col" class="num"><?php esc_html_e( 'Last 30 days', 'drift-ticker' ); ?></th>
 				<th scope="col" class="num"><?php esc_html_e( 'Active installs', 'drift-ticker' ); ?></th>
+				<th scope="col"><?php esc_html_e( 'Rating', 'drift-ticker' ); ?></th>
+				<th scope="col" class="num"><?php esc_html_e( 'Open threads', 'drift-ticker' ); ?></th>
 				<th scope="col"><?php esc_html_e( 'Version', 'drift-ticker' ); ?></th>
-				<th scope="col"><?php esc_html_e( 'Last snapshot', 'drift-ticker' ); ?></th>
+				<th scope="col"><?php esc_html_e( 'Last updated', 'drift-ticker' ); ?></th>
 			</tr>
 		</thead>
 		<tbody>
 			<?php
 			foreach ( $tracked as $slug => $app_id ) :
-				$state  = drift_ticker_get_state( $slug );
-				$latest = drift_ticker_get_latest( $slug );
-				$name   = $app_id ? get_the_title( $app_id ) : $state['name'];
+				$state   = drift_ticker_get_state( $slug );
+				$summary = drift_ticker_summary( $slug );
 				?>
 				<tr>
-					<td>
-						<strong><?php echo esc_html( $name ? $name : $slug ); ?></strong><br>
+					<th scope="row">
+						<strong><?php echo esc_html( drift_ticker_display_name( $slug, (int) $app_id ) ); ?></strong><br>
 						<a href="<?php echo esc_url( drift_ticker_wporg_url( $slug ) ); ?>" target="_blank" rel="noopener"><code><?php echo esc_html( $slug ); ?></code><span class="screen-reader-text"> <?php esc_html_e( '(opens in a new tab)', 'drift-ticker' ); ?></span></a>
-					</td>
+					</th>
 					<td>
 						<span class="drift-ticker-status drift-ticker-status--<?php echo esc_attr( $state['status'] ); ?>"><?php echo esc_html( $labels[ $state['status'] ] ?? $state['status'] ); ?></span>
+						<?php if ( $state['last_checked'] ) : ?>
+							<br><span class="drift-ticker-muted">
+								<?php
+								/* translators: %s: date and time */
+								echo esc_html( sprintf( __( 'Checked %s', 'drift-ticker' ), drift_ticker_format_date( $state['last_checked'], true ) ) );
+								?>
+							</span>
+						<?php endif; ?>
 						<?php if ( $state['last_error'] ) : ?>
 							<br><span class="drift-ticker-error"><?php echo esc_html( $state['last_error'] ); ?></span>
 						<?php endif; ?>
 					</td>
-					<td class="num"><?php echo $latest ? esc_html( number_format_i18n( (int) $latest['downloaded'] ) ) : '&ndash;'; ?></td>
-					<td class="num"><?php echo $latest ? esc_html( number_format_i18n( (int) $latest['active_installs'] ) . '+' ) : '&ndash;'; ?></td>
-					<td><?php echo $latest ? esc_html( $latest['version'] ) : '&ndash;'; ?></td>
-					<td><?php echo $latest ? esc_html( drift_ticker_format_date( $latest['snap_date'] ) ) : '&ndash;'; ?></td>
+					<?php if ( $summary ) : ?>
+						<td class="num"><?php echo esc_html( number_format_i18n( $summary['downloaded'] ) ); ?></td>
+						<td class="num"><?php echo drift_ticker_period_cell( $summary['last_7'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in helper. ?></td>
+						<td class="num"><?php echo drift_ticker_period_cell( $summary['last_30'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in helper. ?></td>
+						<td class="num"><?php echo esc_html( drift_ticker_installs_label( $summary['active_installs'] ) ); ?></td>
+						<td>
+							<?php if ( $summary['num_ratings'] ) : ?>
+								<span aria-hidden="true">&#9733;</span>
+								<?php
+								/* translators: 1: rating out of 5, 2: number of ratings */
+								$drift_ticker_rating = sprintf( __( '%1$s (%2$s)', 'drift-ticker' ), drift_ticker_stars( $summary['rating'] ), number_format_i18n( $summary['num_ratings'] ) );
+								echo esc_html( $drift_ticker_rating );
+								?>
+								<span class="screen-reader-text"><?php esc_html_e( 'out of 5, number of ratings in brackets', 'drift-ticker' ); ?></span>
+							<?php else : ?>
+								<span class="drift-ticker-muted"><?php esc_html_e( 'No ratings', 'drift-ticker' ); ?></span>
+							<?php endif; ?>
+						</td>
+						<td class="num">
+							<?php echo esc_html( number_format_i18n( $summary['open_threads'] ) ); ?>
+							<?php if ( $summary['support_threads'] ) : ?>
+								<span class="drift-ticker-muted">
+									<?php
+									/* translators: %s: number of support threads */
+									echo esc_html( sprintf( __( 'of %s', 'drift-ticker' ), number_format_i18n( $summary['support_threads'] ) ) );
+									?>
+								</span>
+							<?php endif; ?>
+						</td>
+						<td><?php echo esc_html( $summary['version'] ); ?></td>
+						<td><?php echo $summary['last_updated'] ? esc_html( drift_ticker_format_date( $summary['last_updated'] ) ) : '&ndash;'; ?></td>
+					<?php else : ?>
+						<td colspan="8" class="drift-ticker-muted">
+							<?php
+							echo 'pending' === $state['status']
+								? esc_html__( 'Not on WordPress.org yet. Checked daily; stats start the day it goes live.', 'drift-ticker' )
+								: esc_html__( 'No snapshot yet.', 'drift-ticker' );
+							?>
+						</td>
+					<?php endif; ?>
 				</tr>
 			<?php endforeach; ?>
 		</tbody>
 	</table>
 	<?php
 	return (string) ob_get_clean();
+}
+
+/**
+ * One chart card per tracked slug that has snapshots. The series (365 days)
+ * is in data-series; assets/chart.js draws it for the chosen range.
+ *
+ * @return string
+ */
+function drift_ticker_charts_html() {
+	$charts = '';
+	foreach ( drift_ticker_tracked() as $slug => $app_id ) {
+		if ( ! drift_ticker_get_latest( $slug ) ) {
+			continue;
+		}
+		$name = drift_ticker_display_name( $slug, (int) $app_id );
+		$id   = 'drift-ticker-chart-' . $slug;
+
+		// Compact: [ date, downloads|null, new version|"" ].
+		$series = array_map(
+			static function ( $entry ) {
+				return array( $entry['date'], $entry['downloads'], $entry['version'] );
+			},
+			drift_ticker_daily_series( $slug, 365 )
+		);
+
+		$export = wp_nonce_url(
+			add_query_arg(
+				array(
+					'action' => 'drift_ticker_export',
+					'slug'   => $slug,
+				),
+				admin_url( 'admin-post.php' )
+			),
+			'drift_ticker_export'
+		);
+
+		ob_start();
+		?>
+		<section class="drift-ticker-chart" aria-labelledby="<?php echo esc_attr( $id ); ?>">
+			<div class="drift-ticker-chart__head">
+				<h3 id="<?php echo esc_attr( $id ); ?>"><?php echo esc_html( $name ); ?></h3>
+				<p class="drift-ticker-chart__total" data-chart-total></p>
+				<a class="drift-ticker-chart__csv" href="<?php echo esc_url( $export ); ?>">
+					<?php esc_html_e( 'CSV', 'drift-ticker' ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: plugin name */ __( 'export for %s', 'drift-ticker' ), $name ) ); ?></span>
+				</a>
+			</div>
+			<div class="drift-ticker-chart__plot" data-chart data-name="<?php echo esc_attr( $name ); ?>" data-series="<?php echo esc_attr( (string) wp_json_encode( $series ) ); ?>"></div>
+			<details class="drift-ticker-chart__data">
+				<summary><?php esc_html_e( 'Show as a table', 'drift-ticker' ); ?></summary>
+				<div data-chart-table></div>
+			</details>
+		</section>
+		<?php
+		$charts .= ob_get_clean();
+	}
+
+	if ( '' === $charts ) {
+		return '<p class="drift-ticker-muted">' . esc_html__( 'Charts appear here once a tracked plugin is live on WordPress.org and has its first snapshot.', 'drift-ticker' ) . '</p>';
+	}
+	return $charts;
 }
 
 /**
@@ -228,9 +382,10 @@ function drift_ticker_render_settings_page() {
 	if ( ! current_user_can( drift_ticker_capability() ) ) {
 		return;
 	}
-	$last_run = (int) get_option( 'drift_ticker_last_run', 0 );
-	$next_run = wp_next_scheduled( DRIFT_TICKER_CRON_DAILY );
-	$log      = get_option( 'drift_ticker_log', array() );
+	$last_run   = (int) get_option( 'drift_ticker_last_run', 0 );
+	$next_run   = wp_next_scheduled( DRIFT_TICKER_CRON_DAILY );
+	$log        = get_option( 'drift_ticker_log', array() );
+	$export_all = wp_nonce_url( add_query_arg( 'action', 'drift_ticker_export', admin_url( 'admin-post.php' ) ), 'drift_ticker_export' );
 	?>
 	<div class="wrap drift-ticker">
 		<h1 class="drift-ticker__title">
@@ -241,10 +396,13 @@ function drift_ticker_render_settings_page() {
 		<div class="drift-ticker__card">
 			<div class="drift-ticker__card-head">
 				<h2><?php esc_html_e( 'Tracked plugins', 'drift-ticker' ); ?></h2>
-				<button type="button" class="button button-primary" id="drift-ticker-refresh"><?php esc_html_e( 'Refresh now', 'drift-ticker' ); ?></button>
+				<div class="drift-ticker__actions">
+					<a class="button" href="<?php echo esc_url( $export_all ); ?>"><?php esc_html_e( 'Export CSV', 'drift-ticker' ); ?></a>
+					<button type="button" class="button button-primary" id="drift-ticker-refresh"><?php esc_html_e( 'Refresh now', 'drift-ticker' ); ?></button>
+				</div>
 			</div>
 			<p class="drift-ticker__intro">
-				<?php esc_html_e( 'WordPress.org shows active installs in bands (10+, 100+, 1,000+…), and its download count includes updates, not just new installs.', 'drift-ticker' ); ?>
+				<?php esc_html_e( 'WordPress.org shows active installs in bands (10+, 100+, 1,000+…), and its download count includes updates, not just new installs. Open threads are from the last two months, as WordPress.org counts them.', 'drift-ticker' ); ?>
 			</p>
 			<p class="drift-ticker__meta" id="drift-ticker-message" role="status" aria-live="polite">
 				<?php
@@ -259,8 +417,34 @@ function drift_ticker_render_settings_page() {
 				}
 				?>
 			</p>
-			<div id="drift-ticker-tracked">
+			<div class="drift-ticker__scroll" id="drift-ticker-tracked">
 				<?php echo drift_ticker_tracked_table_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped while built. ?>
+			</div>
+		</div>
+
+		<div class="drift-ticker__card">
+			<div class="drift-ticker__card-head">
+				<h2><?php esc_html_e( 'Daily downloads', 'drift-ticker' ); ?></h2>
+				<fieldset class="drift-ticker-range">
+					<legend class="screen-reader-text"><?php esc_html_e( 'Period', 'drift-ticker' ); ?></legend>
+					<?php
+					$drift_ticker_ranges = array(
+						30  => __( '30 days', 'drift-ticker' ),
+						90  => __( '90 days', 'drift-ticker' ),
+						365 => __( '12 months', 'drift-ticker' ),
+					);
+					foreach ( $drift_ticker_ranges as $drift_ticker_days => $drift_ticker_label ) :
+						?>
+						<label>
+							<input type="radio" name="drift_ticker_range" value="<?php echo esc_attr( $drift_ticker_days ); ?>" <?php checked( 30, $drift_ticker_days ); ?>>
+							<span><?php echo esc_html( $drift_ticker_label ); ?></span>
+						</label>
+					<?php endforeach; ?>
+				</fieldset>
+			</div>
+			<p class="drift-ticker-muted"><?php esc_html_e( '12 months shows weekly totals. Dashed lines mark the day a new version appeared.', 'drift-ticker' ); ?></p>
+			<div id="drift-ticker-charts">
+				<?php echo drift_ticker_charts_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped while built. ?>
 			</div>
 		</div>
 
@@ -293,7 +477,7 @@ function drift_ticker_render_settings_page() {
 add_action( 'wp_ajax_drift_ticker_refresh', 'drift_ticker_ajax_refresh' );
 /**
  * "Refresh now": runs the snapshot, skipping the response cache, and returns
- * the updated table.
+ * the updated table and charts.
  *
  * @return void
  */
@@ -319,6 +503,7 @@ function drift_ticker_ajax_refresh() {
 				/* translators: 1: number saved, 2: number pending, 3: number failed */
 				'message' => sprintf( __( 'Updated %1$d, pending %2$d, failed %3$d.', 'drift-ticker' ), $saved, $pending, $failed ),
 				'html'    => drift_ticker_tracked_table_html(),
+				'charts'  => drift_ticker_charts_html(),
 			)
 		);
 	} catch ( Throwable $e ) {

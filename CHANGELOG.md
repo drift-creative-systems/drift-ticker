@@ -12,4 +12,10 @@ All notable changes to this project are documented here. The format is based on 
 - Pending / live / closed state per slug, and a `drift_ticker_went_live` action on the first good response.
 - `Drift_Ticker_Source` interface and `drift_ticker_source` filter, so a Freemius source can be added later.
 - Settings → Drift: Ticker in the Drift card style with the "D" mark: tracked plugins table, Refresh now (AJAX, nonce + capability), extra slugs setting, fetch log, and the copyright line in the admin footer.
-- Test harness (WordPress stubs + SQLite) with 43 tests, plus a live run against api.wordpress.org.
+- Test harness (WordPress stubs + SQLite) with PHP tests, plus a live run against api.wordpress.org.
+- Tracked plugins table: last 7 and 30 days (marked "since" when data starts inside the period), installs band, rating out of 5, open support threads, WordPress.org last updated date, last check time.
+- Daily downloads chart per plugin: dependency-free SVG bars for 30 or 90 days, weekly totals for 12 months, version-change markers, tooltips on hover and arrow keys, and a table view.
+- `drift_ticker_daily_series()`, `drift_ticker_summary()` and label helpers in `includes/stats.php`. Days before tracking began use the backfill table when it has data.
+- CSV export of every snapshot (all plugins or one), with daily downloads, star counts and open threads.
+- Refresh now updates the charts as well as the table.
+- Chart logic tests (`node tests/chart.test.js`).

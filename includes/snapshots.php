@@ -246,22 +246,29 @@ function drift_ticker_get_rows( $slug, $days = 30 ) {
 }
 
 /**
- * Adds "downloads_day" to each row: this row's total minus the previous
- * row's, floored at 0 (a lower total is an API glitch, not negative downloads).
- * null when there's nothing to compare with.
+ * Adds two keys to each row:
+ * - "downloads_day": this row's total minus the previous row's, floored at 0
+ *   (a lower total is an API glitch, not negative downloads). null when
+ *   there's nothing to compare with.
+ * - "version_changed": the version differs from the previous row's. false
+ *   when there's nothing to compare with.
  *
  * @param array[]    $rows   Rows, oldest first.
  * @param array|null $before Row before the first one, if any.
  * @return array[]
  */
 function drift_ticker_add_daily_downloads( array $rows, $before = null ) {
-	$previous = $before ? (int) $before['downloaded'] : null;
+	$previous         = $before ? (int) $before['downloaded'] : null;
+	$previous_version = $before ? (string) $before['version'] : null;
 	foreach ( $rows as $i => $row ) {
 		$total = (int) $row['downloaded'];
 
-		$rows[ $i ]['downloads_day'] = null === $previous ? null : max( 0, $total - $previous );
+		$rows[ $i ]['downloads_day']   = null === $previous ? null : max( 0, $total - $previous );
+		$rows[ $i ]['version_changed'] = null !== $previous_version && '' !== (string) $row['version'] && (string) $row['version'] !== $previous_version;
+
 		// Keep the highest total seen, so a dip followed by a recovery isn't counted twice.
-		$previous = null === $previous ? $total : max( $previous, $total );
+		$previous         = null === $previous ? $total : max( $previous, $total );
+		$previous_version = (string) $row['version'];
 	}
 	return $rows;
 }

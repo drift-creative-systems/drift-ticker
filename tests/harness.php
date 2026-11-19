@@ -52,6 +52,8 @@ function __( $text, $domain = '' ) { return $text; }
 function esc_html__( $text, $domain = '' ) { return $text; }
 function sanitize_text_field( $str ) { return trim( preg_replace( '/[\r\n\t ]+/', ' ', strip_tags( (string) $str ) ) ); }
 function absint( $v ) { return abs( (int) $v ); }
+function number_format_i18n( $n, $decimals = 0 ) { return number_format( $n, $decimals ); }
+function sanitize_key( $key ) { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) ); }
 function wp_json_encode( $v ) { return json_encode( $v ); }
 function wp_parse_args( $args, $defaults ) { return array_merge( $defaults, (array) $args ); }
 function is_wp_error( $thing ) { return $thing instanceof WP_Error; }
@@ -147,6 +149,16 @@ class DT_Wpdb {
 				UNIQUE (slug, snap_date)
 			)'
 		);
+		$this->pdo->exec(
+			'CREATE TABLE wp_drift_ticker_backfill (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				slug TEXT NOT NULL,
+				stat_date TEXT NOT NULL,
+				downloads INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				UNIQUE (slug, stat_date)
+			)'
+		);
 	}
 	public function prepare( $query, ...$args ) {
 		$pdo  = $this->pdo;
@@ -196,5 +208,7 @@ function dt_fired( $hook ) {
 	return array_values( array_filter( $GLOBALS['dt_fired'], function ( $f ) use ( $hook ) { return $f[0] === $hook; } ) );
 }
 
-// Load the plugin (admin.php isn't loaded: is_admin() is false).
+// Load the plugin (admin files aren't loaded: is_admin() is false), then the
+// CSV builders, which don't need the admin screen.
 require dirname( __DIR__ ) . '/drift-ticker.php';
+require dirname( __DIR__ ) . '/includes/export.php';

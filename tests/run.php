@@ -236,6 +236,86 @@ dt_test( 'Tracked list: apps first, then extra slugs', function () {
 	dt_assert( array( 'drift-wipe' => 458, 'akismet' => 0 ) === drift_ticker_tracked(), 'app slug linked to its post, duplicate extra slug dropped, empty slug ignored' );
 } );
 
+/** Snapshots on given dates with given totals and versions. */
+function dt_seed( $slug, array $days ) {
+	foreach ( $days as $date => $values ) {
+		$GLOBALS['dt_now'] = strtotime( $date . ' 12:00:00 UTC' );
+		drift_ticker_save_snapshot(
+			$slug,
+			array(
+				'downloaded'               => $values[0],
+				'active_installs'          => 100,
+				'rating'                   => 96,
+				'num_ratings'              => 12,
+				'ratings'                  => array( 5 => 11, 4 => 1, 3 => 0, 2 => 0, 1 => 0 ),
+				'support_threads'          => 5,
+				'support_threads_resolved' => 3,
+				'version'                  => $values[1],
+				'last_updated'             => '2026-11-18 09:05:00',
+			)
+		);
+	}
+}
+
+dt_test( 'Daily series, version markers and backfill', function () {
+	dt_seed(
+		'drift-wipe',
+		array(
+			'2026-11-16' => array( 1000, '1.1.0' ),
+			'2026-11-17' => array( 1030, '1.1.0' ),
+			'2026-11-18' => array( 1070, '1.2.0' ),
+			'2026-11-19' => array( 1100, '1.2.0' ),
+		)
+	);
+	// Backfill for days before tracking began, and one day that snapshots also cover.
+	$pdo = $GLOBALS['wpdb']->pdo;
+	foreach ( array( '2026-11-13' => 7, '2026-11-14' => 9, '2026-11-15' => 11, '2026-11-17' => 999 ) as $date => $count ) {
+		$pdo->exec( "INSERT INTO wp_drift_ticker_backfill (slug, stat_date, downloads, created_at) VALUES ('drift-wipe', '{$date}', {$count}, '2026-11-19')" );
+	}
+
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 12:00:00 UTC' );
+	$series            = drift_ticker_daily_series( 'drift-wipe', 7 );
+
+	dt_assert( 7 === count( $series ) && '2026-11-13' === $series[0]['date'] && '2026-11-19' === $series[6]['date'], '7 entries, 13/11 to today' );
+	dt_assert( array( 7, 9, 11, null, 30, 40, 30 ) === array_column( $series, 'downloads' ), 'backfill fills days before tracking; first snapshot day has no difference (null); snapshot beats backfill' );
+	dt_assert( array( '', '', '', '', '', '1.2.0', '' ) === array_column( $series, 'version' ), 'version marker only on the day it changed' );
+
+	$sum = drift_ticker_sum_series( $series, 7 );
+	dt_assert( 127 === $sum['total'] && ! $sum['partial'], '7-day total 127, not partial' );
+
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 12:00:00 UTC' );
+	$sum30             = drift_ticker_sum_series( drift_ticker_daily_series( 'drift-wipe', 30 ), 30 );
+	dt_assert( 127 === $sum30['total'] && $sum30['partial'] && '2026-11-13' === $sum30['since'], '30-day total partial, since 13/11' );
+
+	$empty = drift_ticker_sum_series( drift_ticker_daily_series( 'nothing-here', 7 ), 7 );
+	dt_assert( null === $empty['total'], 'no data → null total, not 0' );
+} );
+
+dt_test( 'Summary and labels', function () {
+	dt_seed( 'drift-wipe', array( '2026-11-18' => array( 1000, '1.1.0' ), '2026-11-19' => array( 1040, '1.1.0' ) ) );
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 12:00:00 UTC' );
+	$summary           = drift_ticker_summary( 'drift-wipe' );
+
+	dt_assert( 1040 === $summary['downloaded'] && 40 === $summary['last_7']['total'], 'total and last 7 days' );
+	dt_assert( 2 === $summary['open_threads'] && 5 === $summary['support_threads'], 'open threads = threads − resolved' );
+	dt_assert( null === drift_ticker_summary( 'drift-tags' ), 'no snapshot → null summary' );
+
+	dt_assert( 'Fewer than 10' === drift_ticker_installs_label( 0 ), '0 installs → "Fewer than 10"' );
+	dt_assert( '1,000+' === drift_ticker_installs_label( 1000 ), '1000 → "1,000+"' );
+	dt_assert( '4.8' === drift_ticker_stars( 96 ), 'rating 96 → 4.8 stars' );
+} );
+
+dt_test( 'CSV', function () {
+	dt_seed( 'drift-wipe', array( '2026-11-18' => array( 1000, '1.1.0' ), '2026-11-19' => array( 1040, '=HYPERLINK("x")' ) ) );
+	$rows = drift_ticker_csv_rows( 'drift-wipe' );
+
+	dt_assert( count( drift_ticker_csv_header() ) === count( $rows[0] ), 'row width matches header' );
+	dt_assert( '18/11/2026' === $rows[0][1] && '' === $rows[0][3] && 40 === $rows[1][3], 'DD/MM/YYYY dates; daily blank on first row, then 40' );
+	dt_assert( 11 === $rows[0][7] && 2 === $rows[0][14], 'star counts and open threads' );
+	dt_assert( "'=HYPERLINK(\"x\")" === $rows[1][15], 'formula-like text is neutralised' );
+	dt_assert( 5 === drift_ticker_csv_cell( 5 ) && '-' !== drift_ticker_csv_cell( '-1' )[0], 'numbers untouched; "-1" as text escaped' );
+} );
+
 // ---------------------------------------------------------------------------
 
 if ( in_array( '--live', $argv, true ) ) {
