@@ -19,7 +19,7 @@ Internal plugin by **Drift Creative Systems**. Takes a daily snapshot of each Dr
 | 4 | Front-end function, shortcode, hero/card strip | Done (theme placement is manual, see below) |
 | 5 | Go-live detection and history backfill | Done (theme `wporg` status is manual, see below) |
 | 6 | Alerts and weekly summary | Done |
-| 7 | Stats in page modules | |
+| 7 | Stats in page modules | Done (one theme line is manual, see below) |
 
 ## How it works
 
@@ -158,6 +158,36 @@ function drift_app_is_available( string $status ): bool {
 
 `assets/site.css`, lines 155, 156 and 230: add `.pill--wporg` next to `.pill--live` in all three selectors. Also add `"wporg": "Free on WordPress.org"` to the `drift_status` choices in `acf-json/group_drift_app_details.json` (fallback copy; bump `modified`). Then bump the theme version.
 
+## Page modules
+
+`includes/modules.php`. WordPress.org numbers in the theme's existing **Stats** module, e.g. "18,000 downloads across 8 free plugins", rather than a second stats layout.
+
+- Ticker adds five choices to the module's "Counted from Apps" checkbox (`field_drift_stats_counted`, via `acf/load_field`, in code; the theme's acf-json is unchanged):
+
+  | Key | Shows |
+  |---|---|
+  | `wporg_downloads` | "18,000" · "downloads across 8 free plugins" ("downloads" for one plugin) |
+  | `wporg_plugins` | "8" · "free plugins on WordPress.org" |
+  | `wporg_installs` | "1,100+" · "active installs" (sum of the bands; left out under 10) |
+  | `wporg_rating` | "4.8" · "average rating from 34 reviews" (weighted; left out with no ratings) |
+  | `wporg_downloads_30` | "2,410" · "downloads in the last 30 days" (left out until there's data) |
+
+- **Which plugins:** the module's Accent suite if set, else the page's suite (Page settings → Page suite, so the WP Suite page counts the WP Suite), else every live plugin.
+- Nothing live in that suite → those stats aren't shown (no zeros). If Ticker is deactivated the choices disappear and the module skips the saved keys.
+- Values arrive in the theme's `[ value, singular, plural ]` format through the theme filter `drift_stats_counted` ( `$counted, $suite` ).
+- In any text module, the shortcodes work too: `[drift_ticker suite="wp" stat="downloaded"]`.
+
+### Theme change (drift-create, on `develop`)
+
+`modules/stats/module.php`, straight after the `$counted = [ … ];` array:
+
+```php
+// Drift: Ticker adds WordPress.org stats (wporg_* keys) when it's active.
+$counted = (array) apply_filters( 'drift_stats_counted', $counted, (string) get_sub_field( 'accent_suite' ) );
+```
+
+Saving the Page modules field group in wp-admin can write Ticker's choices into the theme's acf-json. That's harmless (the module ignores keys nobody fills in), but leave them out of commits to keep the theme independent of the plugin.
+
 ## Alerts
 
 `includes/alerts.php`. Settings → Drift: Ticker → Alerts: Make webhook URL, Slack webhook URL (optional), email address (optional). Webhooks must be https. "Send a test alert" sends to the saved channels; "Recent alerts" lists the last 20 with status and where they went.
@@ -246,6 +276,7 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `drift_ticker_suite_aliases` | filter | `alias => suite key` for `suite="…"`. Default `wp => agency` |
 | `drift_ticker_strip_html` | filter | `( $html, $slug, $args )` |
 | `drift_ticker_enqueue_styles` | filter | `false` to skip `assets/ticker.css` |
+| `drift_stats_counted` | filter (theme's) | Ticker hooks it to add the `wporg_*` stats to the Stats module |
 | `drift_ticker_purge_cache` | action | After a run that changed what visitors see. For caches other than SG Optimizer |
 
 ## Files
@@ -259,6 +290,7 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `includes/sources/` | `Drift_Ticker_Source` interface and the WordPress.org source |
 | `includes/snapshots.php` | Run, save and read snapshots |
 | `includes/stats.php` | Daily series, 7/30-day totals, labels (database only; used by the front end later) |
+| `includes/modules.php` | WordPress.org stats for the theme's Stats module |
 | `includes/alerts.php` | Event detection, dedupe, Make / Slack / email delivery, retries, weekly summary |
 | `includes/golive.php` | App status at go-live, `live` event, history backfill |
 | `includes/frontend.php` | `drift_ticker_get()`, suite totals, strip, button, shortcodes, page cache purge |

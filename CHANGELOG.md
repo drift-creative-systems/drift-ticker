@@ -32,3 +32,4 @@ All notable changes to this project are documented here. The format is based on 
 - `{prefix}drift_ticker_events` table (schema version 2): each alert is recorded by key and never sent twice; failed channels are retried up to three times.
 - Alert settings, "Send a test alert" and a "Recent alerts" list on the settings screen.
 - readme.txt discloses the optional Make and Slack connections.
+- WordPress.org stats in the theme's Stats page module: downloads ("across N free plugins"), number of free plugins, active installs, average rating and last 30 days, per suite or overall. Added as "Counted from Apps" choices and filled through the theme's `drift_stats_counted` filter (one theme line, README → Page modules).

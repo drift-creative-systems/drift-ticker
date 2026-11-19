@@ -737,6 +737,31 @@ dt_test( 'Weekly schedule and settings', function () {
 	dt_assert( "*A &lt;b&gt; &amp; c*\nx&gt;y" === $text, 'Slack control characters escaped' );
 } );
 
+dt_test( 'Stats page module', function () {
+	$theme = array( 'apps' => array( 6, 'app', 'apps' ) );
+	dt_assert( $theme === drift_ticker_add_counted_stats( $theme, '' ), 'nothing live → theme stats untouched, nothing added' );
+
+	dt_live_apps(); // Wipe 1,240 (100 installs, 12 ratings at 98), Tags 1 (agency); Curtain 500 (music, 10 installs, 4 ratings at 80).
+
+	$wp = drift_ticker_add_counted_stats( $theme, 'agency' );
+	dt_assert( $theme['apps'] === $wp['apps'], 'theme stats kept' );
+	dt_assert( array( '1,241', 'downloads across 2 free plugins', 'downloads across 2 free plugins' ) === $wp['wporg_downloads'], 'WP Suite: "1,241 downloads across 2 free plugins", in the theme\'s [value, one, many] format' );
+	dt_assert( array( '2', 'free plugins on WordPress.org', 'free plugins on WordPress.org' ) === $wp['wporg_plugins'], 'plugin count' );
+	dt_assert( '100+' === $wp['wporg_installs'][0] && '4.9' === $wp['wporg_rating'][0] && 'average rating from 12 reviews' === $wp['wporg_rating'][1], 'installs band and rating' );
+	dt_assert( ! isset( $wp['wporg_downloads_30'] ), 'no 30-day figure until there are two snapshots' );
+
+	$music = drift_ticker_add_counted_stats( array(), 'music' );
+	dt_assert( 'downloads' === $music['wporg_downloads'][1] && 'free plugin on WordPress.org' === $music['wporg_plugins'][1], 'one plugin: singular labels' );
+
+	$all = drift_ticker_add_counted_stats( array(), '' );
+	dt_assert( '1,741' === $all['wporg_downloads'][0] && 'downloads across 3 free plugins' === $all['wporg_downloads'][1], 'no suite (and no drift_page_suite) → all' );
+
+	dt_assert( array() === drift_ticker_add_counted_stats( array(), 'seo' ), 'suite with nothing live → nothing added' );
+
+	$field = drift_ticker_add_counted_choices( array( 'choices' => array( 'apps' => 'Number of apps' ) ) );
+	dt_assert( 'Number of apps' === $field['choices']['apps'] && isset( $field['choices']['wporg_downloads'], $field['choices']['wporg_downloads_30'] ), 'ACF choices: theme ones kept, Ticker ones added' );
+} );
+
 // ---------------------------------------------------------------------------
 
 if ( in_array( '--live', $argv, true ) ) {
