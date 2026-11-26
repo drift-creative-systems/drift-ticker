@@ -43,6 +43,12 @@ Settings → Drift: Ticker (`options-general.php?page=drift-ticker`).
 - **Export CSV** (`admin-post.php?action=drift_ticker_export`, nonce + capability; `&slug=` for one plugin): every snapshot row with daily downloads, star counts and open threads. Dates DD/MM/YYYY, UTF-8 with BOM, formula-like text escaped.
 - Refresh now swaps in the new table and charts without a page reload.
 
+### Dashboard widget
+
+Dashboard → **Drift: Ticker**, for users with the Ticker capability (`drift_ticker_capability`, default `manage_options`). One row per tracked plugin: name and status (plus "Last check failed" when the last fetch errored), total downloads, last 7 days, installs band, rating and open threads. The footer shows the last run and links to the Ticker screen. Database only, like the front end; `admin.css` loads on the Dashboard for these users.
+
+**Drift: Welcome** removes every dashboard widget but its own on `wp_dashboard_setup` at priority 999. Ticker registers its widget at **1000**, so it survives and sits under the welcome panel. Welcome needs no change. If Welcome's sweep ever moves past 1000, move this one too (`includes/dashboard.php`). Bonsai Dashboard sweeps the same way and needs the same treatment.
+
 ### Real server cron
 
 The snapshot is a normal WP-Cron event, so a server cron works as-is. In `wp-config.php` set `define( 'DISABLE_WP_CRON', true );`, then in SiteGround → Devs → Cron Jobs run every 15 minutes:
@@ -299,6 +305,7 @@ All deleted, with both tables and the cached responses, in `uninstall.php` (on e
 | `includes/updates.php` | Updates from GitHub releases |
 | `vendor/` | Plugin Update Checker (Composer, committed) |
 | `includes/admin.php` | Settings → Drift: Ticker, table, chart cards, Refresh now |
+| `includes/dashboard.php` | Dashboard widget (registered after Drift: Welcome's sweep) |
 | `includes/export.php` | CSV export |
 | `assets/chart.js` | SVG bar chart |
 | `assets/admin.js` | Refresh now, period control |

@@ -24,5 +24,6 @@ require DRIFT_TICKER_DIR . 'includes/cron.php';
 
 if ( is_admin() ) {
 	require DRIFT_TICKER_DIR . 'includes/admin.php';
+	require DRIFT_TICKER_DIR . 'includes/dashboard.php';
 	require DRIFT_TICKER_DIR . 'includes/export.php';
 }

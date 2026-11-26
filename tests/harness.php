@@ -41,7 +41,7 @@ class WP_Error {
 function dt_now() { return null === $GLOBALS['dt_now'] ? time() : $GLOBALS['dt_now']; }
 
 // Hooks.
-function add_action( $hook, $cb, $priority = 10, $args = 1 ) { $GLOBALS['dt_actions'][ $hook ][] = array( $cb, $args ); return true; }
+function add_action( $hook, $cb, $priority = 10, $args = 1 ) { $GLOBALS['dt_actions'][ $hook ][] = array( $cb, $args, $priority ); return true; }
 function add_filter( $hook, $cb, $priority = 10, $args = 1 ) { return add_action( $hook, $cb, $priority, $args ); }
 function apply_filters( $hook, $value, ...$args ) { return $value; }
 // Records the hook, then runs the plugin's own drift_ticker_* callbacks as WordPress would.
@@ -80,6 +80,10 @@ function is_wp_error( $thing ) { return $thing instanceof WP_Error; }
 function plugin_dir_path( $file ) { return dirname( $file ) . '/'; }
 function plugin_dir_url( $file ) { return 'https://example.test/wp-content/plugins/drift-ticker/'; }
 function is_admin() { return false; }
+function plugin_basename( $file ) { return basename( dirname( $file ) ) . '/' . basename( $file ); }
+function current_user_can( $cap ) { return in_array( $cap, $GLOBALS['dt_caps'], true ); }
+function wp_add_dashboard_widget( $id, $title, $cb ) { $GLOBALS['dt_widgets'][ $id ] = array( $title, $cb ); }
+function esc_html_e( $text, $domain = '' ) { echo esc_html( $text ); }
 function wp_installing() { return true; }
 function post_type_exists( $type ) { return 'drift_app' === $type && ! empty( $GLOBALS['dt_posts'] ); }
 
@@ -279,6 +283,8 @@ function dt_reset() {
 	$GLOBALS['dt_mail_ok']       = true;
 
 	$GLOBALS['drift_ticker_display_changed'] = false;
+	$GLOBALS['dt_caps']                      = array();
+	$GLOBALS['dt_widgets']                   = array();
 }
 
 /**
@@ -289,6 +295,8 @@ function dt_fired( $hook ) {
 }
 
 // Load the plugin (admin files aren't loaded: is_admin() is false), then the
-// CSV builders, which don't need the admin screen.
+// CSV builders, the admin helpers and the dashboard widget by hand.
 require dirname( __DIR__ ) . '/drift-ticker.php';
 require dirname( __DIR__ ) . '/includes/export.php';
+require dirname( __DIR__ ) . '/includes/admin.php';
+require dirname( __DIR__ ) . '/includes/dashboard.php';

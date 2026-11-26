@@ -307,3 +307,50 @@
 		padding: 4px 12px 12px;
 	}
 }
+
+/* Dashboard widget (Dashboard → Drift: Ticker). */
+.drift-ticker-widget {
+	--drift-ticker-accent-strong: #0f5fd6;
+	--drift-ticker-accent-hover: #0b4bab;
+}
+
+.drift-ticker-widget__scroll {
+	overflow-x: auto;
+	margin: 0 -12px;
+}
+
+.drift-ticker-widget__table {
+	border: 0;
+	box-shadow: none;
+}
+
+.drift-ticker-widget__table th,
+.drift-ticker-widget__table td {
+	padding: 8px 6px;
+	vertical-align: top;
+}
+
+.drift-ticker-widget__table thead th {
+	white-space: nowrap;
+}
+
+.drift-ticker-widget__table .drift-ticker-status {
+	margin-top: 4px;
+}
+
+.drift-ticker-widget__foot {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 8px;
+	margin: 12px 0 0;
+}
+
+.drift-ticker-widget__foot a {
+	color: var(--drift-ticker-accent-strong);
+}
+
+.drift-ticker-widget__foot a:hover,
+.drift-ticker-widget__foot a:focus {
+	color: var(--drift-ticker-accent-hover);
+}

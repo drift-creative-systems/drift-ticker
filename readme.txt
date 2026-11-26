@@ -18,6 +18,7 @@ Drift: Ticker takes a snapshot of your WordPress.org plugins once a day and keep
 * One snapshot per plugin per day, stored in its own database table.
 * Shows plugins that haven't been approved yet as pending, and marks them live when WordPress.org lists them.
 * Refresh now button on the settings screen.
+* Dashboard widget with each plugin's status, downloads, installs, rating and open threads. It still shows when Drift: Welcome replaces the dashboard.
 * Failed checks never overwrite good data. They're listed in a log on the settings screen.
 * Alerts to a Make webhook, Slack or email: plugin goes live, new rating (flagged under 4 stars), new support thread, download milestones, active installs changes and new versions, plus a weekly summary on Monday mornings. Each alert is sent once.
 
@@ -75,6 +76,9 @@ Once a day at about 03:15 UK time, using WP-Cron. If your site uses a real serve
 WordPress.org doesn't list it yet, usually because it's still in review. Ticker keeps checking every day and marks it live as soon as it appears.
 
 == Changelog ==
+
+= Unreleased =
+* Dashboard widget: status, downloads, last 7 days, installs, rating and open threads per plugin. Shows alongside Drift: Welcome.
 
 = 0.1.0 =
 * First version: daily snapshots, pending and live detection, Refresh now, extra slugs and fetch log.

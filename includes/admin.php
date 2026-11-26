@@ -159,12 +159,17 @@ function drift_ticker_admin_footer_text( $text ) {
 
 add_action( 'admin_enqueue_scripts', 'drift_ticker_admin_assets' );
 /**
- * Styles and scripts, on the settings screen only.
+ * Styles and scripts, on the settings screen only. The Dashboard gets the
+ * styles alone, for the widget, when the user can see it.
  *
  * @param string $hook_suffix Current admin page.
  * @return void
  */
 function drift_ticker_admin_assets( $hook_suffix ) {
+	if ( 'index.php' === $hook_suffix && current_user_can( drift_ticker_capability() ) ) {
+		wp_enqueue_style( 'drift-ticker-admin', DRIFT_TICKER_URL . 'assets/admin.css', array(), DRIFT_TICKER_VERSION );
+		return;
+	}
 	if ( 'settings_page_' . DRIFT_TICKER_PAGE_SLUG !== $hook_suffix ) {
 		return;
 	}

@@ -762,6 +762,33 @@ dt_test( 'Stats page module', function () {
 	dt_assert( 'Number of apps' === $field['choices']['apps'] && isset( $field['choices']['wporg_downloads'], $field['choices']['wporg_downloads_30'] ), 'ACF choices: theme ones kept, Ticker ones added' );
 } );
 
+dt_test( 'Dashboard widget', function () {
+	$hook = $GLOBALS['dt_actions']['wp_dashboard_setup'][0];
+	dt_assert( 'drift_ticker_add_dashboard_widget' === $hook[0] && 1000 === $hook[2], 'registered at 1000, after the Drift: Welcome sweep at 999' );
+
+	drift_ticker_add_dashboard_widget();
+	dt_assert( array() === $GLOBALS['dt_widgets'], 'not added without the capability' );
+	$GLOBALS['dt_caps'] = array( 'manage_options' );
+	drift_ticker_add_dashboard_widget();
+	dt_assert( isset( $GLOBALS['dt_widgets']['drift_ticker_dashboard'] ), 'added with the capability' );
+
+	$html = drift_ticker_dashboard_widget_html();
+	dt_assert( false !== strpos( $html, 'Nothing is tracked yet' ) && false !== strpos( $html, 'Not run yet' ), 'empty state, not run yet' );
+
+	$GLOBALS['dt_posts'] = array( 458 => array( 'title' => 'Drift: Wipe', 'meta' => array( 'drift_wporg_slug' => 'drift-wipe' ) ) );
+	dt_track( array( 'drift-tags' ) );
+	dt_seed( 'drift-wipe', array( '2026-11-18' => array( 1000, '1.1.0' ), '2026-11-19' => array( 1040, '1.1.0' ) ) );
+	$GLOBALS['dt_now'] = strtotime( '2026-11-19 12:00:00 UTC' );
+	update_option( 'drift_ticker_last_run', strtotime( '2026-11-19 03:15:00 UTC' ) );
+	$html = drift_ticker_dashboard_widget_html();
+
+	dt_assert( false !== strpos( $html, 'Drift: Wipe' ) && false !== strpos( $html, '1,040' ), 'app name and total downloads' );
+	dt_assert( false !== strpos( $html, 'drift-tags' ) && false !== strpos( $html, 'No snapshot yet.' ), 'slug without a snapshot gets a placeholder row' );
+	dt_assert( false !== strpos( $html, 'Last run: 19/11/2026 03:15' ), 'last run in Europe/London' );
+	dt_assert( false !== strpos( $html, 'options-general.php?page=drift-ticker' ), 'links to the Ticker screen' );
+	dt_assert( 0 === $GLOBALS['dt_http_calls'], 'no external requests' );
+} );
+
 // ---------------------------------------------------------------------------
 
 if ( in_array( '--live', $argv, true ) ) {

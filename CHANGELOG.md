@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Dashboard widget (Dashboard → Drift: Ticker) for users with the Ticker capability: status, total downloads, last 7 days, installs band, rating and open threads per tracked plugin, plus the last run and a link to the Ticker screen. Reads the database only.
+- The widget registers on `wp_dashboard_setup` at priority 1000, after Drift: Welcome's widget sweep at 999, so it still shows when Welcome replaces the dashboard.
+- `admin.css` loads on the Dashboard for users who can see the widget.
+- Tests for the widget; the test harness now loads `includes/admin.php` and records hook priorities.
+
 ## [0.1.0] - 2026-11-19
 
 First release.
