@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-26
 
 ### Added
 - Dashboard widget (Dashboard → Drift: Ticker) for users with the Ticker capability: status, total downloads, last 7 days, installs band, rating and open threads per tracked plugin, plus the last run and a link to the Ticker screen. Reads the database only.

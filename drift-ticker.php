@@ -3,7 +3,7 @@
  * Plugin Name:       Drift: Ticker
  * Plugin URI:        https://github.com/drift-creative-systems/drift-ticker
  * Description:       Daily download, install, rating and support stats for Drift's free WordPress.org plugins, with alerts and front-end stats for the Drift site.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Drift Creative Systems
@@ -37,7 +37,7 @@ if ( defined( 'DRIFT_TICKER_VERSION' ) ) {
 	return;
 }
 
-define( 'DRIFT_TICKER_VERSION', '0.1.0' );
+define( 'DRIFT_TICKER_VERSION', '0.2.0' );
 define( 'DRIFT_TICKER_DB_VERSION', '2' );
 define( 'DRIFT_TICKER_FILE', __FILE__ );
 define( 'DRIFT_TICKER_DIR', plugin_dir_path( __FILE__ ) );

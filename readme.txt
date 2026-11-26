@@ -4,7 +4,7 @@ Tags: statistics, downloads, plugin stats, wordpress.org, dashboard
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 0.1.0
+Stable tag: 0.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -77,13 +77,16 @@ WordPress.org doesn't list it yet, usually because it's still in review. Ticker 
 
 == Changelog ==
 
-= Unreleased =
+= 0.2.0 =
 * Dashboard widget: status, downloads, last 7 days, installs, rating and open threads per plugin. Shows alongside Drift: Welcome.
 
 = 0.1.0 =
 * First version: daily snapshots, pending and live detection, Refresh now, extra slugs and fetch log.
 
 == Upgrade Notice ==
+
+= 0.2.0 =
+Adds a dashboard widget for your tracked plugins.
 
 = 0.1.0 =
 First version.
